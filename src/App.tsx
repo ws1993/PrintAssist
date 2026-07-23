@@ -178,7 +178,17 @@ export function App() {
       return item.status !== 'succeeded' && item.kind !== 'unknown';
     });
     if (sourceItems.length === 0) {
-      message.warning('没有可打印的文件');
+      const allSucceeded =
+        queueState.items.length > 0 &&
+        queueState.items.every(
+          (item) => item.status === 'succeeded' || item.kind === 'unknown',
+        ) &&
+        queueState.items.some((item) => item.status === 'succeeded');
+      if (allSucceeded) {
+        message.info('当前批次文件均已打印成功，可清空后继续添加新文件');
+      } else {
+        message.warning('没有可打印的文件');
+      }
       return null;
     }
 
@@ -251,6 +261,16 @@ export function App() {
         message.warning(`完成：成功 ${batchResult.succeeded}，失败 ${batchResult.failed}`);
       } else {
         message.success(`全部完成：成功 ${batchResult.succeeded}`);
+        Modal.confirm({
+          title: '打印全部成功',
+          content: `本批 ${batchResult.succeeded} 个文件均已打印成功。是否清空当前批次列表？清空后可继续添加新文件。`,
+          okText: '清空列表',
+          cancelText: '暂时保留',
+          onOk: () => {
+            dispatch({ type: 'clear_queue' });
+            message.success('已清空当前批次');
+          },
+        });
       }
     } catch (error) {
       dispatch({

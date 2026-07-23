@@ -19,7 +19,11 @@ export function PrintSummary({ summary, onRetryFailed }: PrintSummaryProps) {
         type={summary.failed > 0 ? 'warning' : 'success'}
         showIcon
         message={`打印完成：成功 ${summary.succeeded}，失败 ${summary.failed}，跳过 ${summary.skipped}`}
-        description="单项失败不会阻断整批任务。可仅重试失败项。"
+        description={
+          summary.failed > 0
+            ? '单项失败不会阻断整批任务。可仅重试失败项。'
+            : '全部成功。确认后可清空列表，避免再次点击「开始打印」时误以为仍有待打文件。'
+        }
         action={
           summary.failed > 0 ? (
             <Button size="small" type="primary" onClick={onRetryFailed}>
