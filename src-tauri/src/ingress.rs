@@ -1,8 +1,12 @@
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "pdf", "png", "jpg", "jpeg", "bmp", "tif", "tiff", "gif", "txt", "log", "md", "doc", "docx",
-    "xls", "xlsx", "ppt", "pptx",
+    "pdf",
+    // images
+    "png", "jpg", "jpeg", "jpe", "jfif", "bmp", "dib", "tif", "tiff", "gif", "webp", "ico", "heic",
+    "heif", "avif", "emf", "wmf",
+    // text / office
+    "txt", "log", "md", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
 ];
 
 pub fn collect_launch_paths(arguments: &[String]) -> Vec<String> {

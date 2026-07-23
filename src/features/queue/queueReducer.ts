@@ -21,13 +21,26 @@ export type QueueAction =
 
 const SUPPORTED_EXTENSIONS: Record<string, SupportedDocumentKind> = {
   pdf: 'pdf',
+  // 位图 / 常见照片
   png: 'image',
   jpg: 'image',
   jpeg: 'image',
+  jpe: 'image',
+  jfif: 'image',
   bmp: 'image',
+  dib: 'image',
   tif: 'image',
   tiff: 'image',
   gif: 'image',
+  webp: 'image',
+  ico: 'image',
+  // 现代/移动端格式（依赖系统编解码与关联程序）
+  heic: 'image',
+  heif: 'image',
+  avif: 'image',
+  // Windows 图元文件
+  emf: 'image',
+  wmf: 'image',
   txt: 'text',
   log: 'text',
   md: 'text',

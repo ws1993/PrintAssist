@@ -32,10 +32,14 @@ lopdf = "0.34"
 windows = { version = "=0.58.0", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_Imaging",
   "Win32_Graphics_Printing",
+  "Win32_Globalization",
   "Win32_Security",
   "Win32_Storage_Xps",
   "Win32_System_Com",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }

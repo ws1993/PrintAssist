@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyQueueState } from '../../domain/queueTypes';
-import { createPrintSummary, queueReducer } from './queueReducer';
+import { createPrintSummary, detectDocumentKind, queueReducer } from './queueReducer';
+
+describe('detectDocumentKind', () => {
+  it('recognizes common image formats as image', () => {
+    const imagePaths = [
+      'photo.webp',
+      'scan.jfif',
+      'camera.heic',
+      'shot.avif',
+      'logo.ico',
+      'clip.emf',
+      'raw.dib',
+      'pic.jpe',
+    ];
+    for (const path of imagePaths) {
+      expect(detectDocumentKind(path)).toBe('image');
+    }
+  });
+});
 
 describe('queueReducer', () => {
   it('appends unique files and keeps existing items', () => {

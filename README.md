@@ -40,12 +40,12 @@ npm run tauri:build
 
 | 类型 | 扩展名 | 说明 |
 |---|---|---|
-| PDF | `.pdf` | 通过系统关联 / printto |
-| 图片 | `.png .jpg .jpeg .bmp .tif .tiff .gif` | printto |
+| PDF | `.pdf` | 原生按页打印：保留横向/竖向，按比例铺满纸张 |
+| 图片 | `.png .jpg .jpeg .jpe .jfif .bmp .dib .tif .tiff .gif .webp .ico .heic .heif .avif .emf .wmf` | 原生 GDI 打印：保持源方向、按比例铺满纸张（HEIC/AVIF 等依赖系统编解码器） |
 | 文本 | `.txt .log .md` | printto |
-| Word | `.doc .docx` | 优先 Office COM 转 PDF |
-| Excel | `.xls .xlsx` | 优先 Office COM 转 PDF |
-| PowerPoint | `.ppt .pptx` | 优先 Office COM 转 PDF |
+| Word | `.doc .docx` | 优先 Office COM 直接打印（保留节方向）；失败再转 PDF 原生打印 |
+| Excel | `.xls .xlsx` | 优先 Excel COM 直接打印（保留工作表方向）；自定义页码走 PDF |
+| PowerPoint | `.ppt .pptx` | 优先 PowerPoint COM 直接打印（保留幻灯片方向）；自定义页码走 PDF |
 
 ## 重要限制（首版）
 
