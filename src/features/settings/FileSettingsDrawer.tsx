@@ -1,4 +1,4 @@
-import { Button, Drawer, Input, InputNumber, Radio, Space, Switch, Typography, message } from 'antd';
+import { Button, Drawer, Input, InputNumber, Radio, Space, Switch, Tooltip, Typography, message } from 'antd';
 import { useEffect, useState } from 'react';
 import type { QueueItem } from '../../domain/queueTypes';
 import type {
@@ -97,11 +97,12 @@ export function FileSettingsDrawer({
 
   return (
     <Drawer
-      title={item ? `单文件设置 · ${item.fileName}` : '单文件设置'}
+      title="单文件设置"
       open={open}
       onClose={onClose}
       width={420}
       destroyOnClose
+      className="file-settings-drawer"
       extra={
         <Space>
           <Button onClick={onClose}>取消</Button>
@@ -109,6 +110,24 @@ export function FileSettingsDrawer({
         </Space>
       }
     >
+      {item && (
+        <div className="drawer-file-meta">
+          <span className="drawer-file-meta-label">当前文件</span>
+          <Tooltip title={item.fileName} placement="bottomLeft">
+            <div className="drawer-file-name" title={item.fileName}>
+              {item.fileName}
+            </div>
+          </Tooltip>
+          {item.path && item.path !== item.fileName && (
+            <Tooltip title={item.path} placement="bottomLeft">
+              <div className="drawer-file-path" title={item.path}>
+                {item.path}
+              </div>
+            </Tooltip>
+          )}
+        </div>
+      )}
+
       <Typography.Paragraph type="secondary">
         未开启覆盖的选项将继承公共默认值。页码范围仅作用于当前文件。
       </Typography.Paragraph>
