@@ -276,7 +276,7 @@ export function App() {
             <div className="brand-mark">
               <Printer size={18} />
             </div>
-            <div>
+            <div className="brand-copy">
               <Typography.Title level={4}>打印助手</Typography.Title>
               <Typography.Text>
                 当前批次 · {queueState.items.length} 个文件
@@ -284,7 +284,7 @@ export function App() {
               </Typography.Text>
             </div>
           </div>
-          <Space>
+          <Space className="header-actions" size={10}>
             <Button ghost icon={<RefreshCw size={14} />} onClick={() => void refreshPrinters()}>
               刷新打印机
             </Button>

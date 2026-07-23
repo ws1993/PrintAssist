@@ -19,12 +19,16 @@ body {
 
 .app-shell { min-height: 100vh; background: rgba(242, 246, 250, 0.86); }
 .app-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  height: 58px; padding: 0 28px; color: white; background: #10213a; border-bottom: 3px solid #1557d0;
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  height: 58px; padding: 0 28px; line-height: normal; color: white; background: #10213a; border-bottom: 3px solid #1557d0;
 }
-.brand-group { display: flex; align-items: center; gap: 12px; }
-.app-header h4.ant-typography { margin: 0; color: white; font-size: 17px; }
-.app-header .ant-typography { color: #a9b8cd; font-size: 11px; }
+.brand-group { display: flex; align-items: center; min-width: 0; gap: 12px; }
+.brand-copy { display: grid; align-content: center; gap: 3px; min-width: 0; }
+.app-header h4.ant-typography { margin: 0; color: white; font-size: 17px; line-height: 1.15; }
+.app-header .ant-typography { color: #a9b8cd; font-size: 11px; line-height: 1.2; }
+.header-actions { flex-shrink: 0; align-items: center; }
+.header-actions .ant-space-item { display: flex; align-items: center; }
+.header-actions .ant-btn { display: inline-flex; align-items: center; height: 30px; line-height: 1; }
 .brand-mark {
   display: grid; place-items: center; width: 30px; height: 30px; color: white;
   background: #1557d0; border: 1px solid #4b84e8;
