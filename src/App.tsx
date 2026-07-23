@@ -344,7 +344,7 @@ export function App() {
             </Button>
           </Space>
         </Header>
-        <Layout>
+        <Layout className="app-body">
           <Sider width={342} theme="light" className="control-rail">
             <Typography.Text className="section-index">01 / 文件入口</Typography.Text>
             <Typography.Title level={5}>追加打印文件</Typography.Title>
@@ -418,13 +418,15 @@ export function App() {
                 void executePrint(true);
               }}
             />
-            <PrintQueue
-              items={queueState.items}
-              globalSettings={globalSettings}
-              isPrinting={queueState.isPrinting}
-              onRemove={(id) => dispatch({ type: 'remove_item', id })}
-              onOpenSettings={(id) => setSettingsItemId(id)}
-            />
+            <div className="queue-body">
+              <PrintQueue
+                items={queueState.items}
+                globalSettings={globalSettings}
+                isPrinting={queueState.isPrinting}
+                onRemove={(id) => dispatch({ type: 'remove_item', id })}
+                onOpenSettings={(id) => setSettingsItemId(id)}
+              />
+            </div>
           </Content>
         </Layout>
       </Layout>
