@@ -9,6 +9,8 @@ pub mod office_print;
 #[cfg(windows)]
 pub mod pdf_print;
 #[cfg(windows)]
+pub mod pdf_raster_d2d;
+#[cfg(windows)]
 pub mod print_shell;
 
 use std::path::Path;

@@ -40,7 +40,7 @@ npm run tauri:build
 
 | 类型 | 扩展名 | 说明 |
 |---|---|---|
-| PDF | `.pdf` | 原生按页打印：保留横向/竖向，按比例铺满纸张 |
+| PDF | `.pdf` | 进程内 WinRT/D2D 按页渲染 + GDI 打印：优先 IPdfRendererNative 直渲 BGRA（无 PowerShell、无临时 PNG） |
 | 图片 | `.png .jpg .jpeg .jpe .jfif .bmp .dib .tif .tiff .gif .webp .ico .heic .heif .avif .emf .wmf` | 原生 GDI 打印：保持源方向、按比例铺满纸张（HEIC/AVIF 等依赖系统编解码器） |
 | 文本 | `.txt .log .md` | printto |
 | Word | `.doc .docx` | 优先 Office COM 直接打印（保留节方向）；失败再转 PDF 原生打印 |
