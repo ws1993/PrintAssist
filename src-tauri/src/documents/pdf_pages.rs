@@ -17,8 +17,8 @@ pub fn extract_pages_to_temp_pdf(
         return Err(format!("文件不存在：{}", source_pdf.display()));
     }
 
-    let mut document = Document::load(source_pdf)
-        .map_err(|error| format!("读取 PDF 失败：{error}"))?;
+    let mut document =
+        Document::load(source_pdf).map_err(|error| format!("读取 PDF 失败：{error}"))?;
 
     let page_map = document.get_pages();
     let total_pages = page_map.len() as u32;
@@ -63,8 +63,8 @@ pub fn extract_pages_to_temp_pdf(
     }
 
     // Validate the written PDF is reloadable before handing it to Shell printto.
-    let reloaded = Document::load(&output_path)
-        .map_err(|error| format!("页码筛选 PDF 校验失败：{error}"))?;
+    let reloaded =
+        Document::load(&output_path).map_err(|error| format!("页码筛选 PDF 校验失败：{error}"))?;
     let kept = reloaded.get_pages().len() as u32;
     if kept == 0 {
         let _ = fs::remove_file(&output_path);
@@ -82,7 +82,9 @@ pub fn extract_pages_to_temp_pdf(
 }
 
 fn staging_dir() -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("PrintAssist").join("print-staging");
+    let dir = std::env::temp_dir()
+        .join("PrintAssist")
+        .join("print-staging");
     fs::create_dir_all(&dir).map_err(|error| format!("创建临时打印目录失败：{error}"))?;
     Ok(dir)
 }
@@ -121,16 +123,14 @@ mod tests {
             kids.push(page_id.into());
         }
 
-        document
-            .objects
-            .insert(
-                pages_id,
-                Object::Dictionary(dictionary! {
-                    "Type" => "Pages",
-                    "Count" => kids.len() as i64,
-                    "Kids" => kids,
-                }),
-            );
+        document.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Count" => kids.len() as i64,
+                "Kids" => kids,
+            }),
+        );
 
         let catalog_id = document.add_object(dictionary! {
             "Type" => "Catalog",
@@ -158,10 +158,8 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_expression() {
-        let source = std::env::temp_dir().join(format!(
-            "printassist-test-oor-{}.pdf",
-            std::process::id()
-        ));
+        let source =
+            std::env::temp_dir().join(format!("printassist-test-oor-{}.pdf", std::process::id()));
         write_minimal_pdf(&source, 2);
         let result = extract_pages_to_temp_pdf(&source, "1,9");
         assert!(result.is_err());

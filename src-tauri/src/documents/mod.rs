@@ -35,8 +35,8 @@ pub fn detect_document_kind(path: &Path) -> DocumentKind {
         .as_str()
     {
         "pdf" => DocumentKind::Pdf,
-        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "bmp" | "dib" | "tif" | "tiff" | "gif" | "webp"
-        | "ico" | "heic" | "heif" | "avif" | "emf" | "wmf" => DocumentKind::Image,
+        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "bmp" | "dib" | "tif" | "tiff" | "gif"
+        | "webp" | "ico" | "heic" | "heif" | "avif" | "emf" | "wmf" => DocumentKind::Image,
         "txt" | "log" | "md" => DocumentKind::Text,
         "doc" | "docx" => DocumentKind::Word,
         "xls" | "xlsx" => DocumentKind::Excel,

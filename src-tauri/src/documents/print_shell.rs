@@ -8,7 +8,11 @@ use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
 /// Prints a file to a named printer using the Shell "printto" verb.
 /// This path relies on the file association or Office automation result.
-pub fn print_file_to_printer(file_path: &Path, printer_name: &str, copies: u32) -> Result<(), String> {
+pub fn print_file_to_printer(
+    file_path: &Path,
+    printer_name: &str,
+    copies: u32,
+) -> Result<(), String> {
     if !file_path.exists() {
         return Err(format!("文件不存在：{}", file_path.display()));
     }
@@ -64,7 +68,11 @@ mod tests {
 
     #[test]
     fn rejects_missing_file() {
-        let result = print_file_to_printer(Path::new("C:\\\\this-file-should-not-exist-printassist.pdf"), "Microsoft Print to PDF", 1);
+        let result = print_file_to_printer(
+            Path::new("C:\\\\this-file-should-not-exist-printassist.pdf"),
+            "Microsoft Print to PDF",
+            1,
+        );
         assert!(result.is_err());
     }
 }

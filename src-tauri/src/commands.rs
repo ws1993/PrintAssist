@@ -26,11 +26,9 @@ pub async fn pick_files(app: AppHandle) -> Result<Vec<String>, String> {
         .add_filter(
             "可打印文件",
             &[
-                "pdf",
-                // images
+                "pdf", // images
                 "png", "jpg", "jpeg", "jpe", "jfif", "bmp", "dib", "tif", "tiff", "gif", "webp",
-                "ico", "heic", "heif", "avif", "emf", "wmf",
-                // text / office
+                "ico", "heic", "heif", "avif", "emf", "wmf", // text / office
                 "txt", "log", "md", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
             ],
         )

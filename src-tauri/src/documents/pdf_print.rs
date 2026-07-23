@@ -19,9 +19,7 @@ use windows::Foundation::Size;
 use windows::Graphics::Imaging::{BitmapDecoder, BitmapPixelFormat, PixelDataProvider};
 use windows::Storage::StorageFile;
 use windows::Storage::Streams::InMemoryRandomAccessStream;
-use windows::Win32::System::Com::{
-    CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
-};
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 
 use super::image_print::{print_decoded_pages, query_printer_logical_dpi, DecodedImage};
 use super::pdf_raster_d2d::{destination_pixels_for_page_size, NativePdfRasterContext};
@@ -36,7 +34,11 @@ const MAX_RENDER_DPI: u32 = 300;
 const MAX_RENDER_EDGE_PX: u32 = 5000;
 
 /// Prints a PDF while preserving per-page orientation and maximizing coverage.
-pub fn print_pdf_to_printer(file_path: &Path, printer_name: &str, copies: u32) -> Result<(), String> {
+pub fn print_pdf_to_printer(
+    file_path: &Path,
+    printer_name: &str,
+    copies: u32,
+) -> Result<(), String> {
     if !file_path.exists() {
         return Err(format!("文件不存在：{}", file_path.display()));
     }
@@ -44,9 +46,8 @@ pub fn print_pdf_to_printer(file_path: &Path, printer_name: &str, copies: u32) -
         return Err("打印机名称不能为空".to_string());
     }
 
-    let target_dpi = choose_render_dpi(
-        query_printer_logical_dpi(printer_name).unwrap_or(MAX_RENDER_DPI),
-    );
+    let target_dpi =
+        choose_render_dpi(query_printer_logical_dpi(printer_name).unwrap_or(MAX_RENDER_DPI));
     let pages = render_pdf_pages_in_process(file_path, target_dpi)?;
     if pages.is_empty() {
         return Err("PDF 渲染后没有页面".to_string());
@@ -119,12 +120,8 @@ fn render_single_page(
     let size: Size = page
         .Size()
         .map_err(|error| format!("读取页面尺寸失败：{error}"))?;
-    let (destination_width, destination_height) = destination_pixels_for_page_size(
-        size,
-        target_dpi,
-        MAX_RENDER_EDGE_PX,
-        PDF_DIP_DPI,
-    );
+    let (destination_width, destination_height) =
+        destination_pixels_for_page_size(size, target_dpi, MAX_RENDER_EDGE_PX, PDF_DIP_DPI);
 
     if let Some(context) = d2d_context {
         match context.render_page(page, destination_width, destination_height) {
@@ -135,8 +132,8 @@ fn render_single_page(
         }
     }
 
-    let options = PdfPageRenderOptions::new()
-        .map_err(|error| format!("创建渲染选项失败：{error}"))?;
+    let options =
+        PdfPageRenderOptions::new().map_err(|error| format!("创建渲染选项失败：{error}"))?;
     options
         .SetDestinationWidth(destination_width)
         .map_err(|error| format!("设置渲染宽度失败：{error}"))?;
@@ -147,8 +144,8 @@ fn render_single_page(
         .SetIsIgnoringHighContrast(true)
         .map_err(|error| format!("设置渲染对比度失败：{error}"))?;
 
-    let stream = InMemoryRandomAccessStream::new()
-        .map_err(|error| format!("创建内存流失败：{error}"))?;
+    let stream =
+        InMemoryRandomAccessStream::new().map_err(|error| format!("创建内存流失败：{error}"))?;
     page.RenderWithOptionsToStreamAsync(&stream, &options)
         .map_err(|error| format!("RenderWithOptions 失败：{error}"))?
         .get()
@@ -273,7 +270,10 @@ mod tests {
             },
         });
         let (width, height) = if landscape { (792, 612) } else { (612, 792) };
-        let content = Stream::new(dictionary! {}, b"BT /F1 24 Tf 72 72 Td (Hello) Tj ET".to_vec());
+        let content = Stream::new(
+            dictionary! {},
+            b"BT /F1 24 Tf 72 72 Td (Hello) Tj ET".to_vec(),
+        );
         let content_id = document.add_object(content);
         let page_id = document.add_object(dictionary! {
             "Type" => "Page",
@@ -349,9 +349,8 @@ mod tests {
                 .expect("system clock after epoch")
                 .as_millis()
         );
-        let pdf_path = std::env::temp_dir().join(format!(
-            "printassist-render-inproc-{unique_suffix}.pdf"
-        ));
+        let pdf_path =
+            std::env::temp_dir().join(format!("printassist-render-inproc-{unique_suffix}.pdf"));
         write_minimal_pdf(&pdf_path, true);
 
         let pages = match render_pdf_pages_in_process(&pdf_path, MAX_RENDER_DPI) {

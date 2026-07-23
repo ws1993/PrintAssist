@@ -5,8 +5,8 @@ pub mod ingress;
 pub mod printers;
 pub mod printing;
 
-use tauri::{Emitter, Manager};
 use crate::ingress::collect_launch_paths;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

@@ -3,7 +3,7 @@
 //! Avoids the expensive WinRT "render to encoded stream → BitmapDecoder"
 //! round-trip. Pages are drawn into a D2D target bitmap and read back as BGRA.
 
-use windows::core::{Interface, IUnknown};
+use windows::core::{IUnknown, Interface};
 use windows::Data::Pdf::PdfPage;
 use windows::Foundation::Size;
 use windows::Win32::Foundation::BOOLEAN;
@@ -24,7 +24,7 @@ use windows::Win32::Graphics::Direct3D11::{
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::System::WinRT::Pdf::{
-    PdfCreateRenderer, IPdfRendererNative, PDF_RENDER_PARAMS,
+    IPdfRendererNative, PdfCreateRenderer, PDF_RENDER_PARAMS,
 };
 
 use super::image_print::DecodedImage;
@@ -112,12 +112,7 @@ impl NativePdfRasterContext {
         };
         let target_bitmap: ID2D1Bitmap1 = unsafe {
             self.d2d_context
-                .CreateBitmap(
-                    D2D_SIZE_U { width, height },
-                    None,
-                    0,
-                    &target_properties,
-                )
+                .CreateBitmap(D2D_SIZE_U { width, height }, None, 0, &target_properties)
                 .map_err(|error| format!("创建 D2D 目标位图失败：{error}"))?
         };
 
@@ -172,12 +167,7 @@ impl NativePdfRasterContext {
         };
         let cpu_bitmap: ID2D1Bitmap1 = unsafe {
             self.d2d_context
-                .CreateBitmap(
-                    D2D_SIZE_U { width, height },
-                    None,
-                    0,
-                    &cpu_properties,
-                )
+                .CreateBitmap(D2D_SIZE_U { width, height }, None, 0, &cpu_properties)
                 .map_err(|error| format!("创建 D2D CPU 位图失败：{error}"))?
         };
         unsafe {

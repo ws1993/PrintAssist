@@ -17,9 +17,9 @@ use windows::Win32::Foundation::{GENERIC_READ, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps,
     ResetDCW, SelectObject, SetBrushOrgEx, SetStretchBltMode, StretchBlt, StretchDIBits,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, HALFTONE,
-    DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE, DMORIENT_PORTRAIT, DM_IN_BUFFER,
-    DM_ORIENTATION, DM_OUT_BUFFER, HBITMAP, HDC, HORZRES, LOGPIXELSX, SRCCOPY, VERTRES,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
+    DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HALFTONE, HBITMAP, HDC,
+    HORZRES, LOGPIXELSX, SRCCOPY, VERTRES,
 };
 use windows::Win32::Graphics::Imaging::{
     CLSID_WICImagingFactory, GUID_WICPixelFormat32bppBGRA, IWICBitmapFrameDecode, IWICBitmapSource,
@@ -27,16 +27,19 @@ use windows::Win32::Graphics::Imaging::{
     WICBitmapTransformOptions, WICBitmapTransformRotate180, WICBitmapTransformRotate270,
     WICBitmapTransformRotate90, WICConvertBitmapSource, WICDecodeMetadataCacheOnDemand,
 };
-use windows::Win32::Graphics::Printing::{
-    ClosePrinter, DocumentPropertiesW, OpenPrinterW,
-};
-use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
+use windows::Win32::Graphics::Printing::{ClosePrinter, DocumentPropertiesW, OpenPrinterW};
+use windows::Win32::Storage::Xps::{AbortDoc, EndDoc, EndPage, StartDocW, StartPage, DOCINFOW};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+    COINIT_APARTMENTTHREADED,
 };
 
 /// Prints an image while preserving its orientation and maximizing page coverage.
-pub fn print_image_to_printer(file_path: &Path, printer_name: &str, copies: u32) -> Result<(), String> {
+pub fn print_image_to_printer(
+    file_path: &Path,
+    printer_name: &str,
+    copies: u32,
+) -> Result<(), String> {
     if !file_path.exists() {
         return Err(format!("文件不存在：{}", file_path.display()));
     }
@@ -137,9 +140,7 @@ pub fn decode_image_bgra(file_path: &Path) -> Result<DecodedImage, String> {
                     GENERIC_READ,
                     WICDecodeMetadataCacheOnDemand,
                 )
-                .map_err(|error| {
-                    format!("无法解码图片（系统可能缺少该格式编解码器）：{error}")
-                })?
+                .map_err(|error| format!("无法解码图片（系统可能缺少该格式编解码器）：{error}"))?
         };
 
         let frame: IWICBitmapFrameDecode = unsafe {
@@ -267,8 +268,13 @@ fn print_decoded_pages_once(pages: &[DecodedImage], printer_name: &str) -> Resul
     let _printer_guard = PrinterGuard(printer_handle);
 
     let mut base_devmode = query_devmode(printer_handle, &printer_wide)?;
-    let mut page_devmode =
-        prepare_page_devmode(printer_handle, &printer_wide, &base_devmode, pages[0].width, pages[0].height)?;
+    let mut page_devmode = prepare_page_devmode(
+        printer_handle,
+        &printer_wide,
+        &base_devmode,
+        pages[0].width,
+        pages[0].height,
+    )?;
 
     let hdc = unsafe {
         CreateDCW(
@@ -619,9 +625,7 @@ impl Drop for BitmapGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::Graphics::Gdi::{
-        DM_PAPERLENGTH, DM_PAPERSIZE, DM_PAPERWIDTH,
-    };
+    use windows::Win32::Graphics::Gdi::{DM_PAPERLENGTH, DM_PAPERSIZE, DM_PAPERWIDTH};
 
     #[test]
     fn landscape_image_fills_landscape_page() {

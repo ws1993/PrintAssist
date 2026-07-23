@@ -111,9 +111,9 @@ fn print_item_windows(
     let copies = item.settings.copies.max(1);
 
     match kind {
-        DocumentKind::Image => crate::documents::image_print::print_image_to_printer(
-            path, printer, copies,
-        ),
+        DocumentKind::Image => {
+            crate::documents::image_print::print_image_to_printer(path, printer, copies)
+        }
 
         DocumentKind::Pdf => {
             let pdf_path = if custom_range {
@@ -165,22 +165,12 @@ fn print_item_windows(
             }
 
             match crate::documents::office_print::print_office_to_printer(
-                path,
-                kind,
-                printer,
-                copies,
-                "all",
-                "",
+                path, kind, printer, copies, "all", "",
             ) {
                 Ok(()) => Ok(()),
-                Err(office_error) => fallback_office_via_pdf(
-                    item,
-                    path,
-                    kind,
-                    false,
-                    temporary_paths,
-                    &office_error,
-                ),
+                Err(office_error) => {
+                    fallback_office_via_pdf(item, path, kind, false, temporary_paths, &office_error)
+                }
             }
         }
 
@@ -224,7 +214,9 @@ fn fallback_office_via_pdf(
         }
         Err(convert_error) => {
             if !item.allow_association_fallback {
-                return Err(format!("{prior_error}；Office 转 PDF 也失败：{convert_error}"));
+                return Err(format!(
+                    "{prior_error}；Office 转 PDF 也失败：{convert_error}"
+                ));
             }
             if custom_range {
                 return Err(format!(
@@ -259,7 +251,11 @@ fn validate_printer_capabilities(item: &PrintQueueItemPayload) -> Result<(), Str
     let printers = printers::list_system_printers_sync()?;
     let printer = printers
         .into_iter()
-        .find(|candidate| candidate.name.eq_ignore_ascii_case(&item.settings.printer_name))
+        .find(|candidate| {
+            candidate
+                .name
+                .eq_ignore_ascii_case(&item.settings.printer_name)
+        })
         .ok_or_else(|| format!("找不到打印机：{}", item.settings.printer_name))?;
 
     if printer.state == crate::contracts::PrinterOperationalState::Offline {

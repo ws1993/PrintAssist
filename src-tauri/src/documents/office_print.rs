@@ -66,7 +66,10 @@ fn word_print_script(
     let (range_code, pages_literal) = if custom_pages {
         (
             4,
-            format!("'{}'", escape_for_powershell_literal(page_range_expression.trim())),
+            format!(
+                "'{}'",
+                escape_for_powershell_literal(page_range_expression.trim())
+            ),
         )
     } else {
         (0, "''".to_string())
@@ -194,7 +197,13 @@ try {{
 
 fn run_powershell(script: &str) -> Result<(), String> {
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
         .output()
         .map_err(|error| format!("启动 PowerShell 失败：{error}"))?;
 

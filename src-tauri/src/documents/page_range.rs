@@ -4,7 +4,10 @@ pub fn parse_page_range_expression(
     expression: &str,
     total_pages: Option<u32>,
 ) -> Result<Vec<u32>, String> {
-    let normalized: String = expression.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let normalized: String = expression
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect();
     if normalized.is_empty() {
         return Err("页码表达式不能为空".to_string());
     }

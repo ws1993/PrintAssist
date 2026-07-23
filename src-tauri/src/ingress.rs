@@ -1,11 +1,9 @@
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "pdf",
-    // images
+    "pdf", // images
     "png", "jpg", "jpeg", "jpe", "jfif", "bmp", "dib", "tif", "tiff", "gif", "webp", "ico", "heic",
-    "heif", "avif", "emf", "wmf",
-    // text / office
+    "heif", "avif", "emf", "wmf", // text / office
     "txt", "log", "md", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
 ];
 
