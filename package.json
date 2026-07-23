@@ -1,0 +1,38 @@
+{
+  "name": "print-assist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rsbuild dev",
+    "build": "rsbuild build",
+    "preview": "rsbuild preview",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "printer:probe": "cargo run --manifest-path src-tauri/Cargo.toml --bin printer_probe"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.0.3",
+    "antd": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "latest",
+    "@rsbuild/plugin-react": "latest",
+    "@tauri-apps/cli": "latest",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.1.1",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "jsdom": "^29.1.1",
+    "typescript": "latest",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>打印助手 · 原型方向比较</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; }
+    body { margin: 0; min-height: 100vh; color: #172033; background: #eef1f5; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 22px 30px; background: #fff; border-bottom: 1px solid #dce1e8; }
+    h1 { margin: 0; font-family: "Segoe UI Variable Display", "Microsoft YaHei UI", sans-serif; font-size: 22px; letter-spacing: -.02em; }
+    header p { margin: 5px 0 0; color: #687083; font-size: 13px; }
+    .badge { padding: 7px 10px; border: 1px solid #cfd6e1; color: #4c566a; font-size: 12px; }
+    main { width: min(1480px, 100%); margin: 0 auto; padding: 26px 30px 34px; }
+    .notice { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 20px; padding: 15px 18px; background: #182131; color: #f5f7fb; }
+    .notice strong { font-size: 14px; }
+    .notice span { color: #bbc4d2; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    article { overflow: hidden; background: #fff; border: 1px solid #d9dfe7; box-shadow: 0 14px 34px rgba(28, 39, 57, .08); }
+    .preview { position: relative; aspect-ratio: 16/10; overflow: hidden; background: #dde3eb; border-bottom: 1px solid #d9dfe7; }
+    iframe { width: 1440px; height: 900px; transform: scale(.293); transform-origin: top left; border: 0; pointer-events: none; }
+    .letter { position: absolute; top: 12px; left: 12px; display: grid; place-items: center; width: 34px; height: 34px; color: #fff; background: #172033; font: 700 15px/1 "Segoe UI"; }
+    .copy { padding: 18px; }
+    h2 { margin: 0 0 7px; font-size: 18px; }
+    .copy p { min-height: 42px; margin: 0 0 16px; color: #667084; font-size: 13px; line-height: 1.6; }
+    a { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 11px 13px; color: #fff; background: #172033; text-decoration: none; font-size: 13px; font-weight: 650; }
+    a:hover { background: #2c5cff; }
+    footer { margin-top: 22px; color: #737c8d; font-size: 12px; text-align: center; }
+    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } .preview { aspect-ratio: 16/7; } iframe { transform: scale(.67); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>打印助手 · 原型方向比较</h1><p>三套原型拥有相同内容与交互，只比较视觉语言、信息密度与操作节奏。</p></div>
+    <span class="badge">1440 × 900 桌面应用</span>
+  </header>
+  <main>
+    <div class="notice"><strong>请分别打开并实际点击体验</strong><span>重点体验：公共设置、单文件覆盖、能力禁用、打印结果和失败重试</span></div>
+    <section class="grid">
+      <article><div class="preview"><iframe src="direction-a/index.html" title="方向 A 预览"></iframe><b class="letter">A</b></div><div class="copy"><h2>明亮精密工作台</h2><p>高信息密度、克制蓝色与清晰网格，面向高频办公和熟练用户。</p><a href="direction-a/index.html">打开完整原型 <span>→</span></a></div></article>
+      <article><div class="preview"><iframe src="direction-b/index.html" title="方向 B 预览"></iframe><b class="letter">B</b></div><div class="copy"><h2>温暖纸张工作室</h2><p>暖白纸张层级、自然墨色与分步操作，让复杂设置更友好。</p><a href="direction-b/index.html">打开完整原型 <span>→</span></a></div></article>
+      <article><div class="preview"><iframe src="direction-c/index.html" title="方向 C 预览"></iframe><b class="letter">C</b></div><div class="copy"><h2>深色打印控制台</h2><p>设备面板语汇、鲜明状态和稳定节奏，强调批处理监控与可靠性。</p><a href="direction-c/index.html">打开完整原型 <span>→</span></a></div></article>
+    </section>
+    <footer>选择时可以指定整套方向，也可以提出“采用 A 的布局 + B 的色彩 + C 的状态反馈”一类组合意见。</footer>
+  </main>
+</body>
+</html>

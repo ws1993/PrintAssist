@@ -1,0 +1,39 @@
+[package]
+name = "print-assist"
+version = "0.1.0"
+description = "Native printer discovery baseline for PrintAssist"
+edition = "2021"
+rust-version = "1.81"
+
+[lib]
+name = "print_assist_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.0.2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "=2.0.6", features = [] }
+tauri-macros = "=2.0.2"
+tauri-runtime = "=2.1.1"
+tauri-runtime-wry = "=2.1.2"
+tauri-utils = "=2.0.2"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+walkdir = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+open = "5"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.58.0", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Printing",
+  "Win32_Security",
+  "Win32_Storage_Xps",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }

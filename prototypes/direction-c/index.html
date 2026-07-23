@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>打印助手 · 深色打印控制台</title>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #121311;
+      --panel: #1a1b18;
+      --panel-raised: #22231f;
+      --panel-deep: #0d0e0c;
+      --line: #3a3b34;
+      --line-strong: #5a5b50;
+      --text: #f1eee4;
+      --muted: #aaa99f;
+      --faint: #74756d;
+      --amber: #e5a83d;
+      --amber-dark: #3d2d12;
+      --green: #75c687;
+      --green-dark: #17331e;
+      --red: #e06f5f;
+      --red-dark: #3c1d19;
+      --focus: #ffd37c;
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
+      --font-ui: "Bahnschrift", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+      --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      min-width: 1040px;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 24px 24px;
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    button, input, select { font: inherit; }
+
+    button, select, input {
+      outline: none;
+    }
+
+    button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+      box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus);
+    }
+
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.42; }
+
+    .app-shell {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 68px minmax(0, 1fr) 36px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 330px minmax(0, 1fr) auto;
+      align-items: stretch;
+      border-bottom: 1px solid var(--line-strong);
+      background: #191a17;
+      box-shadow: 0 7px 22px rgba(0, 0, 0, 0.24);
+      z-index: 5;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 0 20px;
+      border-right: 1px solid var(--line);
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      color: #171812;
+      background: var(--amber);
+      border: 1px solid #f0c36d;
+      box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 6px;
+      color: var(--faint);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .batch-strip {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      padding: 0 22px;
+      gap: 16px;
+    }
+
+    .eyebrow {
+      color: var(--faint);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      line-height: 1.2;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .batch-status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .status-lamp {
+      width: 9px;
+      height: 9px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--green);
+      border: 1px solid #b3e5bd;
+      box-shadow: 0 0 0 3px rgba(117, 198, 135, 0.1);
+    }
+
+    .status-lamp.amber { background: var(--amber); border-color: #f6ce7d; }
+    .status-lamp.red { background: var(--red); border-color: #f4a297; }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 16px;
+    }
+
+    .icon-button, .text-button, .primary-button, .secondary-button, .danger-button {
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 2px;
+      color: var(--text);
+      background: #252620;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+    }
+
+    .icon-button:hover, .text-button:hover, .secondary-button:hover {
+      background: #303129;
+      border-color: #747567;
+    }
+
+    .icon-button:active, .text-button:active, .primary-button:active, .secondary-button:active, .danger-button:active {
+      transform: translateY(1px);
+    }
+
+    .icon-button {
+      width: 36px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+
+    .icon-button svg, .button-content svg, .row-action svg, .brand-mark svg {
+      width: 16px;
+      height: 16px;
+      stroke-width: 1.8;
+    }
+
+    .button-content {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 326px minmax(0, 1fr);
+      position: relative;
+    }
+
+    .control-rail {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 18px 16px 22px;
+      border-right: 1px solid var(--line-strong);
+      background: rgba(25, 26, 23, 0.96);
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) var(--panel-deep);
+    }
+
+    .panel-section {
+      margin-bottom: 22px;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 9px;
+    }
+
+    .section-heading h2, .queue-title h2, .drawer-title h2 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .section-index {
+      color: var(--amber);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .machined-panel {
+      border: 1px solid var(--line-strong);
+      background: var(--panel-raised);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    .printer-panel { padding: 13px; }
+
+    .field-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+    }
+
+    .select-control, .text-input, .number-input {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line-strong);
+      border-radius: 1px;
+      color: var(--text);
+      background: #11120f;
+      padding: 7px 10px;
+    }
+
+    .select-control:hover, .text-input:hover, .number-input:hover { border-color: #77786c; }
+
+    .printer-readout {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+      padding-top: 11px;
+      border-top: 1px solid var(--line);
+    }
+
+    .readout-label {
+      color: var(--faint);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+    }
+
+    .readout-value {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .capability-note {
+      min-height: 33px;
+      margin: 10px -13px -13px;
+      padding: 8px 13px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      background: #171814;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .capability-note.warning { color: #f2c56d; background: #241e12; }
+    .capability-note.error { color: #f0a096; background: #281714; }
+
+    .setting-stack {
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .setting-row {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      align-items: center;
+      min-height: 55px;
+      border: 1px solid var(--line-strong);
+      border-top: 0;
+      background: var(--panel);
+    }
+
+    .setting-name {
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      border-right: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .segmented-control {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      gap: 3px;
+      padding: 7px;
+    }
+
+    .segmented-control input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .segmented-control label {
+      min-height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid transparent;
+      color: var(--muted);
+      background: #121310;
+      font-size: 11px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .segmented-control input:checked + label {
+      border-color: #b7862f;
+      color: #ffe0a0;
+      background: var(--amber-dark);
+    }
+
+    .segmented-control input:focus-visible + label {
+      box-shadow: 0 0 0 2px var(--focus);
+    }
+
+    .segmented-control input:disabled + label {
+      color: #55564f;
+      background: #181916;
+      cursor: not-allowed;
+      text-decoration: line-through;
+    }
+
+    .inline-field { padding: 7px; }
+
+    .number-stepper {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 34px;
+      height: 34px;
+      border: 1px solid var(--line);
+      background: var(--panel-deep);
+    }
+
+    .number-stepper button {
+      border: 0;
+      color: var(--muted);
+      background: #252620;
+      font-size: 18px;
+    }
+
+    .number-stepper input {
+      min-width: 0;
+      border: 0;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      color: var(--text);
+      background: transparent;
+      text-align: center;
+      appearance: textfield;
+    }
+
+    .number-stepper input::-webkit-inner-spin-button { appearance: none; }
+
+    .scale-line {
+      height: 7px;
+      margin-top: 9px;
+      background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 8px);
+      opacity: 0.65;
+    }
+
+    .queue-area {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+      background: rgba(14, 15, 13, 0.86);
+    }
+
+    .intake-bar {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 78px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--line);
+      background: #181916;
+    }
+
+    .drop-zone {
+      min-width: 0;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 8px 14px;
+      border: 1px dashed #5f6056;
+      background: #121310;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    .drop-zone.is-dragging {
+      border-color: var(--amber);
+      background: #2a2111;
+    }
+
+    .drop-icon {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      color: var(--amber);
+      border: 1px solid #6b5328;
+    }
+
+    .drop-copy { min-width: 0; }
+    .drop-copy strong { display: block; font-size: 12px; }
+    .drop-copy span {
+      display: block;
+      margin-top: 4px;
+      overflow: hidden;
+      color: var(--faint);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .text-button, .secondary-button, .danger-button, .primary-button {
+      padding: 0 13px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .primary-button {
+      color: #18140b;
+      border-color: #f2bd5a;
+      background: var(--amber);
+    }
+
+    .primary-button:hover { background: #f0b64e; }
+
+    .danger-button {
+      color: #efaaa0;
+      border-color: #6a352e;
+      background: #291815;
+    }
+
+    .danger-button:hover { background: #381c18; border-color: #984b41; }
+
+    .queue-toolbar {
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line-strong);
+      background: var(--panel);
+    }
+
+    .queue-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .queue-count {
+      color: var(--amber);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .queue-actions { display: flex; gap: 8px; }
+
+    .queue-scroll {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 13px 20px 28px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) var(--panel-deep);
+    }
+
+    .summary-panel {
+      display: none;
+      grid-template-columns: minmax(230px, 1fr) repeat(3, 104px) auto;
+      align-items: stretch;
+      margin-bottom: 13px;
+      border: 1px solid var(--line-strong);
+      background: #1f211c;
+      box-shadow: var(--shadow);
+    }
+
+    .summary-panel.is-visible { display: grid; }
+
+    .summary-message {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 14px 16px;
+    }
+
+    .summary-message strong { display: block; font-size: 13px; }
+    .summary-message small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+
+    .summary-metric {
+      display: grid;
+      place-content: center;
+      border-left: 1px solid var(--line);
+      text-align: center;
+    }
+
+    .summary-metric strong {
+      font-family: var(--font-mono);
+      font-size: 19px;
+      font-weight: 500;
+    }
+
+    .summary-metric span {
+      margin-top: 3px;
+      color: var(--faint);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .summary-action {
+      display: flex;
+      align-items: center;
+      padding: 11px;
+      border-left: 1px solid var(--line);
+    }
+
+    .queue-header, .task-row {
+      display: grid;
+      grid-template-columns: minmax(250px, 2.4fr) 110px minmax(150px, 1.2fr) 104px 140px;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .queue-header {
+      min-height: 31px;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-bottom: 0;
+      color: var(--faint);
+      background: #151613;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .task-list { border-top: 1px solid var(--line-strong); }
+
+    .task-row {
+      min-height: 76px;
+      padding: 10px 13px;
+      border: 1px solid var(--line-strong);
+      border-top: 0;
+      background: #1d1e1a;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .task-row:hover { background: #23241f; }
+    .task-row.is-failed { border-left: 3px solid var(--red); background: #251a17; }
+    .task-row.is-success { border-left: 3px solid var(--green); }
+    .task-row.is-printing { border-left: 3px solid var(--amber); }
+
+    .file-cell {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .file-type {
+      width: 38px;
+      height: 42px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      color: var(--amber);
+      background: #121310;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.06em;
+    }
+
+    .file-details { min-width: 0; }
+
+    .file-name {
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-meta {
+      margin-top: 6px;
+      color: var(--faint);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .page-cell, .mode-cell { color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .page-cell strong, .mode-cell strong { color: var(--text); font-weight: 550; }
+
+    .status-chip {
+      width: max-content;
+      min-width: 68px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 7px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #141512;
+      font-size: 10px;
+    }
+
+    .status-chip::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--faint);
+    }
+
+    .status-chip.success { color: #a8dfb3; border-color: #386745; background: var(--green-dark); }
+    .status-chip.success::before { background: var(--green); }
+    .status-chip.failed { color: #f2a096; border-color: #703a32; background: var(--red-dark); }
+    .status-chip.failed::before { background: var(--red); }
+    .status-chip.printing { color: #f2c56d; border-color: #725523; background: var(--amber-dark); }
+    .status-chip.printing::before { background: var(--amber); animation: pulse 900ms ease-in-out infinite; }
+
+    @keyframes pulse { 50% { opacity: 0.25; } }
+
+    .row-actions { display: flex; justify-content: flex-end; gap: 5px; }
+
+    .row-action {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 1px;
+      color: var(--muted);
+      background: #171814;
+      font-size: 10px;
+    }
+
+    .row-action:hover { color: var(--text); border-color: #747567; background: #2a2b25; }
+
+    .empty-state {
+      display: none;
+      min-height: 320px;
+      place-content: center;
+      color: var(--faint);
+      border: 1px dashed var(--line);
+      text-align: center;
+    }
+
+    .empty-state.is-visible { display: grid; }
+    .empty-state strong { color: var(--muted); font-size: 13px; }
+    .empty-state span { margin-top: 7px; font-size: 10px; }
+
+    .drawer-backdrop {
+      position: absolute;
+      inset: 0;
+      display: none;
+      background: rgba(0, 0, 0, 0.48);
+      z-index: 9;
+    }
+
+    .drawer-backdrop.is-visible { display: block; }
+
+    .settings-drawer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 394px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      border-left: 1px solid #7c755f;
+      background: #1c1d19;
+      box-shadow: -24px 0 65px rgba(0, 0, 0, 0.52);
+      transform: translateX(102%);
+      transition: transform 180ms ease-out;
+      z-index: 10;
+    }
+
+    .settings-drawer.is-open { transform: translateX(0); }
+
+    .drawer-header {
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--line-strong);
+      background: #25261f;
+    }
+
+    .drawer-title { min-width: 0; }
+    .drawer-title h2 { margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .drawer-body {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 17px 16px 24px;
+    }
+
+    .drawer-nameplate {
+      margin-bottom: 18px;
+      padding: 11px 12px;
+      border: 1px solid #6a6658;
+      color: #d5d0bf;
+      background: #121310;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      line-height: 1.7;
+    }
+
+    .form-group { margin-bottom: 17px; }
+
+    .form-hint {
+      margin: 6px 0 0;
+      color: var(--faint);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .form-error { min-height: 15px; margin-top: 5px; color: var(--red); font-size: 10px; }
+
+    .override-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px;
+    }
+
+    .override-grid .form-group { margin-bottom: 3px; }
+
+    .drawer-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 13px 16px;
+      border-top: 1px solid var(--line-strong);
+      background: #25261f;
+    }
+
+    .statusbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 16px;
+      border-top: 1px solid var(--line-strong);
+      color: var(--faint);
+      background: #0f100e;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.04em;
+    }
+
+    .statusbar-group { display: flex; align-items: center; gap: 18px; }
+    .statusbar strong { color: var(--muted); font-weight: 500; }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 52px;
+      max-width: 360px;
+      padding: 11px 14px;
+      border: 1px solid #786032;
+      color: #f2d293;
+      background: #292114;
+      box-shadow: var(--shadow);
+      font-size: 11px;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity 150ms ease, transform 150ms ease;
+      z-index: 30;
+    }
+
+    .toast.is-visible { opacity: 1; transform: translateY(0); }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 294px minmax(0, 1fr); }
+      .control-rail { padding-left: 12px; padding-right: 12px; }
+      .queue-header, .task-row { grid-template-columns: minmax(220px, 2fr) 90px minmax(125px, 1fr) 92px 126px; gap: 8px; }
+      .summary-panel { grid-template-columns: minmax(210px, 1fr) repeat(3, 76px) auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><i data-lucide="printer"></i></div>
+        <div>
+          <h1>打印助手</h1>
+          <small>Batch control console / C-01</small>
+        </div>
+      </div>
+      <div class="batch-strip">
+        <span class="eyebrow">当前批次</span>
+        <div class="batch-status" id="batchStatus">
+          <span class="status-lamp" id="batchLamp"></span>
+          <span id="batchStatusText">就绪，5 个任务等待执行</span>
+        </div>
+      </div>
+      <nav class="top-actions" aria-label="应用操作">
+        <button class="text-button" type="button" id="updateButton" aria-label="检查更新">
+          <span class="button-content"><i data-lucide="refresh-cw"></i>检查更新</span>
+        </button>
+        <button class="text-button" type="button" id="helpButton" aria-label="打开帮助">
+          <span class="button-content"><i data-lucide="circle-help"></i>帮助</span>
+        </button>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <aside class="control-rail" aria-label="公共打印设置">
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>输出设备</h2>
+            <span class="section-index">01 / DEVICE</span>
+          </div>
+          <div class="machined-panel printer-panel">
+            <label class="field-label" for="printerSelect">系统打印机</label>
+            <select class="select-control" id="printerSelect">
+              <option value="hp">HP Color LaserJet Pro M479</option>
+              <option value="pdf">Microsoft Print to PDF</option>
+              <option value="label">仓库标签打印机</option>
+            </select>
+            <div class="printer-readout" aria-live="polite">
+              <span class="readout-label">LINK</span>
+              <span class="readout-value"><span class="status-lamp" id="printerLamp"></span><span id="printerStatus">在线 · 可用</span></span>
+            </div>
+            <div class="capability-note" id="capabilityNote">设备能力：彩色 / 自动双面 / A4</div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>公共参数</h2>
+            <span class="section-index">02 / COMMON</span>
+          </div>
+          <div class="setting-stack">
+            <div class="setting-row">
+              <div class="setting-name">颜色</div>
+              <div class="segmented-control" role="radiogroup" aria-label="公共颜色设置">
+                <input type="radio" name="commonColor" id="commonBw" value="bw" checked>
+                <label for="commonBw">黑白</label>
+                <input type="radio" name="commonColor" id="commonColor" value="color">
+                <label for="commonColor">彩色</label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-name">单双面</div>
+              <div class="segmented-control" role="radiogroup" aria-label="公共单双面设置">
+                <input type="radio" name="commonSides" id="commonSimplex" value="simplex">
+                <label for="commonSimplex">单面</label>
+                <input type="radio" name="commonSides" id="commonDuplex" value="duplex" checked>
+                <label for="commonDuplex">双面</label>
+              </div>
+            </div>
+            <div class="setting-row" id="flipSettingRow">
+              <div class="setting-name">翻转</div>
+              <div class="segmented-control" role="radiogroup" aria-label="公共翻转设置">
+                <input type="radio" name="commonFlip" id="commonLong" value="long" checked>
+                <label for="commonLong">长边</label>
+                <input type="radio" name="commonFlip" id="commonShort" value="short">
+                <label for="commonShort">短边</label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-name">份数</div>
+              <div class="inline-field">
+                <div class="number-stepper">
+                  <button type="button" id="decreaseCopies" aria-label="减少公共打印份数">−</button>
+                  <input id="commonCopies" type="number" min="1" max="99" value="1" aria-label="公共打印份数">
+                  <button type="button" id="increaseCopies" aria-label="增加公共打印份数">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="scale-line" aria-hidden="true"></div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>执行检查</h2>
+            <span class="section-index">03 / VERIFY</span>
+          </div>
+          <div class="machined-panel" style="padding: 12px;">
+            <div class="readout-label">PREFLIGHT RESULT</div>
+            <div style="display:flex; align-items:center; gap:9px; margin-top:10px;">
+              <span class="status-lamp amber"></span>
+              <strong id="preflightText" style="font-size:12px;">1 个任务等待分析</strong>
+            </div>
+            <p id="preflightDetail" style="margin:8px 0 0; color:var(--faint); font-size:10px; line-height:1.55;">其余任务格式可用，执行时将继续处理单项错误。</p>
+          </div>
+        </section>
+      </aside>
+
+      <section class="queue-area" aria-label="待打印队列">
+        <div class="intake-bar">
+          <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="拖放文件或文件夹到此处追加到队列">
+            <div class="drop-icon" aria-hidden="true"><i data-lucide="inbox"></i></div>
+            <div class="drop-copy">
+              <strong id="dropTitle">拖入文件或文件夹，追加到当前批次</strong>
+              <span>资源管理器右键菜单与“发送到”入口也只会追加，不会覆盖已有任务</span>
+            </div>
+          </div>
+          <button class="text-button" type="button" id="addFileButton"><span class="button-content"><i data-lucide="file-plus-2"></i>选择文件</span></button>
+          <button class="text-button" type="button" id="addFolderButton"><span class="button-content"><i data-lucide="folder-plus"></i>选择文件夹</span></button>
+        </div>
+
+        <div class="queue-toolbar">
+          <div class="queue-title">
+            <h2>待打印队列</h2>
+            <span class="queue-count" id="queueCount">05 ITEMS</span>
+          </div>
+          <div class="queue-actions">
+            <button class="danger-button" type="button" id="clearButton"><span class="button-content"><i data-lucide="trash-2"></i>清空</span></button>
+            <button class="primary-button" type="button" id="printButton"><span class="button-content"><i data-lucide="play"></i><span id="printButtonText">开始打印</span></span></button>
+          </div>
+        </div>
+
+        <div class="queue-scroll">
+          <section class="summary-panel" id="summaryPanel" aria-live="polite" aria-label="打印完成汇总">
+            <div class="summary-message">
+              <span class="status-lamp red" id="summaryLamp"></span>
+              <div><strong id="summaryTitle">批次执行完成，有任务失败</strong><small id="summarySubtitle">失败不会阻断其余任务</small></div>
+            </div>
+            <div class="summary-metric"><strong id="successCount">4</strong><span>完成</span></div>
+            <div class="summary-metric"><strong id="failureCount">1</strong><span>失败</span></div>
+            <div class="summary-metric"><strong id="skippedCount">0</strong><span>跳过</span></div>
+            <div class="summary-action"><button class="secondary-button" type="button" id="retryButton">仅重试失败项</button></div>
+          </section>
+
+          <div class="queue-header" aria-hidden="true">
+            <span>文件 / 类型</span><span>页码</span><span>输出设置</span><span>状态</span><span style="text-align:right;">控制</span>
+          </div>
+          <div class="task-list" id="taskList"></div>
+          <div class="empty-state" id="emptyState">
+            <strong>当前批次为空</strong>
+            <span>选择文件、文件夹，或将内容拖放到上方区域</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="drawer-backdrop" id="drawerBackdrop"></div>
+      <aside class="settings-drawer" id="settingsDrawer" aria-hidden="true" aria-labelledby="drawerHeading">
+        <div class="drawer-header">
+          <div class="drawer-title">
+            <span class="eyebrow">单文件覆盖 / TASK OVERRIDE</span>
+            <h2 id="drawerHeading">文件设置</h2>
+          </div>
+          <button class="text-button" type="button" id="closeDrawerButton" aria-label="关闭文件设置"><span class="button-content"><i data-lucide="x"></i>关闭</span></button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-nameplate" id="drawerNameplate">TASK ID: --<br>FORMAT: -- / SOURCE: CURRENT BATCH</div>
+          <div class="form-group">
+            <label class="field-label" for="pageRangeInput">打印页码</label>
+            <input class="text-input" id="pageRangeInput" type="text" value="全部" placeholder="全部，或 1,3,5-8" aria-describedby="pageRangeHint pageRangeError">
+            <p class="form-hint" id="pageRangeHint">输入“全部”或组合页码，例如 1,3,5-8。</p>
+            <div class="form-error" id="pageRangeError" role="alert"></div>
+          </div>
+          <div class="override-grid">
+            <div class="form-group">
+              <label class="field-label" for="fileColorSelect">颜色</label>
+              <select class="select-control" id="fileColorSelect">
+                <option value="inherit">继承公共设置</option>
+                <option value="bw">黑白</option>
+                <option value="color">彩色</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="fileSidesSelect">单双面</label>
+              <select class="select-control" id="fileSidesSelect">
+                <option value="inherit">继承公共设置</option>
+                <option value="simplex">单面</option>
+                <option value="duplex">双面</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="fileFlipSelect">翻转方式</label>
+              <select class="select-control" id="fileFlipSelect">
+                <option value="inherit">继承公共设置</option>
+                <option value="long">长边翻转</option>
+                <option value="short">短边翻转</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="fileCopiesInput">份数</label>
+              <input class="number-input" id="fileCopiesInput" type="number" min="1" max="99" value="1">
+            </div>
+          </div>
+          <p class="capability-note" id="drawerCapabilityNote" style="margin:18px 0 0; border:1px solid var(--line);">覆盖设置仅作用于当前文件，未覆盖项继续继承公共参数。</p>
+        </div>
+        <div class="drawer-footer">
+          <button class="secondary-button" type="button" id="cancelDrawerButton">取消</button>
+          <button class="primary-button" type="button" id="saveSettingsButton"><span class="button-content"><i data-lucide="save"></i>保存设置</span></button>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="statusbar">
+      <div class="statusbar-group"><span>QUEUE <strong id="footerQueueCount">05</strong></span><span>ENGINE <strong>READY</strong></span><span>SESSION <strong>VOLATILE</strong></span></div>
+      <div>LOCAL ONLY · WINDOWS PRINT PIPELINE · BUILD C.07</div>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const printerProfiles = {
+      hp: {
+        name: "HP Color LaserJet Pro M479",
+        online: true,
+        color: true,
+        duplex: true,
+        status: "在线 · 可用",
+        note: "设备能力：彩色 / 自动双面 / A4"
+      },
+      pdf: {
+        name: "Microsoft Print to PDF",
+        online: true,
+        color: true,
+        duplex: false,
+        status: "在线 · 虚拟设备",
+        note: "此设备不支持自动双面，已锁定为单面输出。"
+      },
+      label: {
+        name: "仓库标签打印机",
+        online: false,
+        color: false,
+        duplex: false,
+        status: "离线 · 无法连接",
+        note: "设备离线，彩色与双面能力不可用。连接恢复前不能开始打印。"
+      }
+    };
+
+    const initialTasks = [
+      { id: 1, name: "2026年7月工资汇总.xlsx", type: "XLSX", pages: "4 个工作表", detail: "148 KB · 本地文件", status: "queued", overrides: { pages: "全部", color: "inherit", sides: "inherit", flip: "inherit", copies: 1 } },
+      { id: 2, name: "新员工入职资料.pdf", type: "PDF", pages: "12 页", detail: "3.8 MB · 本地文件", status: "queued", overrides: { pages: "1,3,5-8", color: "inherit", sides: "inherit", flip: "inherit", copies: 1 } },
+      { id: 3, name: "门店陈列照片.jpg", type: "JPG", pages: "1 页", detail: "6.1 MB · 本地文件", status: "queued", overrides: { pages: "全部", color: "color", sides: "inherit", flip: "inherit", copies: 1 } },
+      { id: 4, name: "季度复盘会议.pptx", type: "PPTX", pages: "等待分析", detail: "12.4 MB · 本地文件", status: "queued", overrides: { pages: "全部", color: "inherit", sides: "inherit", flip: "inherit", copies: 1 } },
+      { id: 5, name: "打印说明.txt", type: "TXT", pages: "2 页", detail: "2 KB · 本地文件", status: "queued", overrides: { pages: "全部", color: "inherit", sides: "inherit", flip: "inherit", copies: 1 } }
+    ];
+
+    let tasks = initialTasks.map((task) => structuredClone(task));
+    let selectedTaskId = null;
+    let nextTaskId = 100;
+    let isPrinting = false;
+    let toastTimeout = null;
+
+    const elements = {
+      taskList: document.getElementById("taskList"),
+      emptyState: document.getElementById("emptyState"),
+      queueCount: document.getElementById("queueCount"),
+      footerQueueCount: document.getElementById("footerQueueCount"),
+      batchStatusText: document.getElementById("batchStatusText"),
+      batchLamp: document.getElementById("batchLamp"),
+      printerSelect: document.getElementById("printerSelect"),
+      printerLamp: document.getElementById("printerLamp"),
+      printerStatus: document.getElementById("printerStatus"),
+      capabilityNote: document.getElementById("capabilityNote"),
+      printButton: document.getElementById("printButton"),
+      printButtonText: document.getElementById("printButtonText"),
+      clearButton: document.getElementById("clearButton"),
+      summaryPanel: document.getElementById("summaryPanel"),
+      retryButton: document.getElementById("retryButton"),
+      summaryLamp: document.getElementById("summaryLamp"),
+      summaryTitle: document.getElementById("summaryTitle"),
+      summarySubtitle: document.getElementById("summarySubtitle"),
+      successCount: document.getElementById("successCount"),
+      failureCount: document.getElementById("failureCount"),
+      skippedCount: document.getElementById("skippedCount"),
+      dropZone: document.getElementById("dropZone"),
+      dropTitle: document.getElementById("dropTitle"),
+      settingsDrawer: document.getElementById("settingsDrawer"),
+      drawerBackdrop: document.getElementById("drawerBackdrop"),
+      drawerHeading: document.getElementById("drawerHeading"),
+      drawerNameplate: document.getElementById("drawerNameplate"),
+      pageRangeInput: document.getElementById("pageRangeInput"),
+      pageRangeError: document.getElementById("pageRangeError"),
+      fileColorSelect: document.getElementById("fileColorSelect"),
+      fileSidesSelect: document.getElementById("fileSidesSelect"),
+      fileFlipSelect: document.getElementById("fileFlipSelect"),
+      fileCopiesInput: document.getElementById("fileCopiesInput"),
+      drawerCapabilityNote: document.getElementById("drawerCapabilityNote"),
+      commonCopies: document.getElementById("commonCopies"),
+      preflightText: document.getElementById("preflightText"),
+      preflightDetail: document.getElementById("preflightDetail"),
+      toast: document.getElementById("toast")
+    };
+
+    function initializeIcons() {
+      if (window.lucide) {
+        window.lucide.createIcons({ attrs: { "aria-hidden": "true" } });
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function getCheckedValue(name) {
+      return document.querySelector(`input[name="${name}"]:checked`)?.value ?? "";
+    }
+
+    function getCommonSettings() {
+      return {
+        color: getCheckedValue("commonColor"),
+        sides: getCheckedValue("commonSides"),
+        flip: getCheckedValue("commonFlip"),
+        copies: Number(elements.commonCopies.value) || 1
+      };
+    }
+
+    function getEffectiveSetting(task, settingName) {
+      const overrideValue = task.overrides[settingName];
+      return overrideValue === "inherit" ? getCommonSettings()[settingName] : overrideValue;
+    }
+
+    function describeTaskMode(task) {
+      const effectiveColor = getEffectiveSetting(task, "color") === "color" ? "彩色" : "黑白";
+      const effectiveSides = getEffectiveSetting(task, "sides");
+      const effectiveFlip = getEffectiveSetting(task, "flip") === "short" ? "短边" : "长边";
+      const copies = task.overrides.copies || getCommonSettings().copies;
+      const sidesLabel = effectiveSides === "duplex" ? `双面 · ${effectiveFlip}` : "单面";
+      return `${effectiveColor} / ${sidesLabel} / ${copies} 份`;
+    }
+
+    function hasCustomOverrides(task) {
+      return task.overrides.pages !== "全部" || task.overrides.color !== "inherit" || task.overrides.sides !== "inherit" || task.overrides.flip !== "inherit" || task.overrides.copies !== 1;
+    }
+
+    function getStatusPresentation(status) {
+      const statuses = {
+        queued: { label: "等待", className: "" },
+        printing: { label: "打印中", className: "printing" },
+        success: { label: "已完成", className: "success" },
+        failed: { label: "失败", className: "failed" }
+      };
+      return statuses[status] || statuses.queued;
+    }
+
+    function renderTasks() {
+      elements.taskList.innerHTML = tasks.map((task) => {
+        const statusPresentation = getStatusPresentation(task.status);
+        const rowClassName = task.status === "failed" ? "is-failed" : task.status === "success" ? "is-success" : task.status === "printing" ? "is-printing" : "";
+        const overrideLabel = hasCustomOverrides(task) ? "单独设置" : "继承公共设置";
+        const pageLabel = task.overrides.pages === "全部" ? task.pages : task.overrides.pages;
+        return `
+          <article class="task-row ${rowClassName}" data-task-id="${task.id}">
+            <div class="file-cell">
+              <div class="file-type" aria-hidden="true">${escapeHtml(task.type)}</div>
+              <div class="file-details">
+                <div class="file-name" title="${escapeHtml(task.name)}">${escapeHtml(task.name)}</div>
+                <div class="file-meta">${escapeHtml(task.detail)}</div>
+              </div>
+            </div>
+            <div class="page-cell"><strong>${escapeHtml(pageLabel)}</strong><br>${task.overrides.pages === "全部" ? "全部内容" : "指定页码"}</div>
+            <div class="mode-cell"><strong>${escapeHtml(describeTaskMode(task))}</strong><br>${overrideLabel}</div>
+            <div><span class="status-chip ${statusPresentation.className}">${statusPresentation.label}</span></div>
+            <div class="row-actions">
+              <button class="row-action settings-action" type="button" data-task-id="${task.id}" aria-label="设置 ${escapeHtml(task.name)}"><i data-lucide="sliders-horizontal"></i>设置</button>
+              <button class="row-action remove-action" type="button" data-task-id="${task.id}" aria-label="移除 ${escapeHtml(task.name)}"><i data-lucide="x"></i>移除</button>
+            </div>
+          </article>`;
+      }).join("");
+
+      const taskCount = tasks.length;
+      elements.queueCount.textContent = `${String(taskCount).padStart(2, "0")} ITEMS`;
+      elements.footerQueueCount.textContent = String(taskCount).padStart(2, "0");
+      elements.emptyState.classList.toggle("is-visible", taskCount === 0);
+      document.querySelector(".queue-header").style.display = taskCount === 0 ? "none" : "grid";
+      elements.clearButton.disabled = taskCount === 0 || isPrinting;
+      updatePrintAvailability();
+      updateBatchStatus();
+      initializeIcons();
+    }
+
+    function updateBatchStatus() {
+      const failedCount = tasks.filter((task) => task.status === "failed").length;
+      const queuedCount = tasks.filter((task) => task.status === "queued").length;
+      const successCount = tasks.filter((task) => task.status === "success").length;
+      elements.batchLamp.className = "status-lamp";
+
+      if (isPrinting) {
+        elements.batchLamp.classList.add("amber");
+        elements.batchStatusText.textContent = "正在执行批次，请勿关闭窗口";
+      } else if (failedCount > 0) {
+        elements.batchLamp.classList.add("red");
+        elements.batchStatusText.textContent = `批次完成，${failedCount} 个任务需要处理`;
+      } else if (tasks.length === 0) {
+        elements.batchLamp.classList.add("amber");
+        elements.batchStatusText.textContent = "当前批次为空，等待追加文件";
+      } else if (queuedCount > 0) {
+        elements.batchStatusText.textContent = `就绪，${queuedCount} 个任务等待执行`;
+      } else {
+        elements.batchStatusText.textContent = `批次完成，${successCount} 个任务已输出`;
+      }
+    }
+
+    function updatePrintAvailability() {
+      const printer = printerProfiles[elements.printerSelect.value];
+      const hasPrintableTasks = tasks.some((task) => task.status === "queued" || task.status === "failed");
+      elements.printButton.disabled = isPrinting || !printer.online || !hasPrintableTasks;
+      elements.printButtonText.textContent = isPrinting ? "正在打印" : "开始打印";
+    }
+
+    function setRadioValue(name, value) {
+      const input = document.querySelector(`input[name="${name}"][value="${value}"]`);
+      if (input) input.checked = true;
+    }
+
+    function updatePrinterCapabilities(announceChange = false) {
+      const printer = printerProfiles[elements.printerSelect.value];
+      const colorOption = document.getElementById("commonColor");
+      const duplexOption = document.getElementById("commonDuplex");
+      const flipOptions = document.querySelectorAll('input[name="commonFlip"]');
+      const selectedColor = getCheckedValue("commonColor");
+      const selectedSides = getCheckedValue("commonSides");
+
+      colorOption.disabled = !printer.color;
+      duplexOption.disabled = !printer.duplex;
+      if (!printer.color && selectedColor === "color") setRadioValue("commonColor", "bw");
+      if (!printer.duplex && selectedSides === "duplex") setRadioValue("commonSides", "simplex");
+
+      const duplexIsActive = getCheckedValue("commonSides") === "duplex" && printer.duplex;
+      flipOptions.forEach((option) => { option.disabled = !duplexIsActive; });
+
+      elements.printerLamp.className = `status-lamp${printer.online ? "" : " red"}`;
+      elements.printerStatus.textContent = printer.status;
+      elements.capabilityNote.textContent = printer.note;
+      elements.capabilityNote.className = `capability-note${!printer.online ? " error" : !printer.duplex ? " warning" : ""}`;
+      elements.preflightText.textContent = printer.online ? "1 个任务等待分析" : "设备离线，执行已锁定";
+      elements.preflightDetail.textContent = printer.online ? "其余任务格式可用，执行时将继续处理单项错误。" : "请选择在线设备，或恢复仓库标签打印机连接。";
+
+      if (announceChange) showToast(`${printer.name}：${printer.note}`);
+      updatePrintAvailability();
+      renderTasks();
+      updateDrawerCapabilityOptions();
+    }
+
+    function updateFlipAvailability() {
+      const printer = printerProfiles[elements.printerSelect.value];
+      const shouldDisableFlip = getCheckedValue("commonSides") !== "duplex" || !printer.duplex;
+      document.querySelectorAll('input[name="commonFlip"]').forEach((option) => { option.disabled = shouldDisableFlip; });
+      renderTasks();
+    }
+
+    function showToast(message) {
+      window.clearTimeout(toastTimeout);
+      elements.toast.textContent = message;
+      elements.toast.classList.add("is-visible");
+      toastTimeout = window.setTimeout(() => elements.toast.classList.remove("is-visible"), 2800);
+    }
+
+    function appendMockFiles(sourceType) {
+      const mockTasks = sourceType === "folder"
+        ? [
+            { name: "门店巡检记录.docx", type: "DOCX", pages: "6 页", detail: "目录追加 · 84 KB" },
+            { name: "设备资产标签.pdf", type: "PDF", pages: "3 页", detail: "目录追加 · 460 KB" },
+            { name: "盘点差异清单.csv", type: "CSV", pages: "待分析", detail: "目录追加 · 22 KB" }
+          ]
+        : [{ name: `追加的采购申请_${String(nextTaskId).slice(-2)}.pdf`, type: "PDF", pages: "3 页", detail: "手动追加 · 320 KB" }];
+
+      mockTasks.forEach((mockTask) => {
+        tasks.push({
+          id: nextTaskId++,
+          ...mockTask,
+          status: "queued",
+          overrides: { pages: "全部", color: "inherit", sides: "inherit", flip: "inherit", copies: 1 }
+        });
+      });
+      hideSummary();
+      renderTasks();
+      showToast(sourceType === "folder" ? `已从文件夹追加 ${mockTasks.length} 个文件，原队列保持不变` : "已追加 1 个文件，原队列保持不变");
+    }
+
+    function removeTask(taskId) {
+      if (isPrinting) return;
+      const removedTask = tasks.find((task) => task.id === taskId);
+      tasks = tasks.filter((task) => task.id !== taskId);
+      if (selectedTaskId === taskId) closeSettingsDrawer();
+      hideSummary();
+      renderTasks();
+      if (removedTask) showToast(`已从当前批次移除：${removedTask.name}`);
+    }
+
+    function openSettingsDrawer(taskId) {
+      const task = tasks.find((candidate) => candidate.id === taskId);
+      if (!task || isPrinting) return;
+      selectedTaskId = taskId;
+      elements.drawerHeading.textContent = task.name;
+      elements.drawerNameplate.innerHTML = `TASK ID: ${String(task.id).padStart(4, "0")}<br>FORMAT: ${escapeHtml(task.type)} / SOURCE: CURRENT BATCH`;
+      elements.pageRangeInput.value = task.overrides.pages;
+      elements.fileColorSelect.value = task.overrides.color;
+      elements.fileSidesSelect.value = task.overrides.sides;
+      elements.fileFlipSelect.value = task.overrides.flip;
+      elements.fileCopiesInput.value = task.overrides.copies;
+      elements.pageRangeError.textContent = "";
+      updateDrawerCapabilityOptions();
+      elements.settingsDrawer.classList.add("is-open");
+      elements.settingsDrawer.setAttribute("aria-hidden", "false");
+      elements.drawerBackdrop.classList.add("is-visible");
+      window.setTimeout(() => elements.pageRangeInput.focus(), 190);
+    }
+
+    function closeSettingsDrawer() {
+      elements.settingsDrawer.classList.remove("is-open");
+      elements.settingsDrawer.setAttribute("aria-hidden", "true");
+      elements.drawerBackdrop.classList.remove("is-visible");
+      selectedTaskId = null;
+    }
+
+    function updateDrawerCapabilityOptions() {
+      const printer = printerProfiles[elements.printerSelect.value];
+      const colorOption = elements.fileColorSelect.querySelector('option[value="color"]');
+      const duplexOption = elements.fileSidesSelect.querySelector('option[value="duplex"]');
+      colorOption.disabled = !printer.color;
+      duplexOption.disabled = !printer.duplex;
+      if (!printer.color && elements.fileColorSelect.value === "color") elements.fileColorSelect.value = "bw";
+      if (!printer.duplex && elements.fileSidesSelect.value === "duplex") elements.fileSidesSelect.value = "simplex";
+      updateDrawerFlipAvailability();
+      elements.drawerCapabilityNote.textContent = printer.online
+        ? (printer.duplex ? "覆盖设置仅作用于当前文件，未覆盖项继续继承公共参数。" : "当前设备不支持自动双面，文件级双面选项已禁用。")
+        : "当前设备离线，设置可以保存，但恢复连接前不能开始打印。";
+      elements.drawerCapabilityNote.className = `capability-note${!printer.online ? " error" : !printer.duplex ? " warning" : ""}`;
+      elements.drawerCapabilityNote.style.margin = "18px 0 0";
+      elements.drawerCapabilityNote.style.border = "1px solid var(--line)";
+    }
+
+    function updateDrawerFlipAvailability() {
+      const printer = printerProfiles[elements.printerSelect.value];
+      const sidesValue = elements.fileSidesSelect.value;
+      const effectiveSidesValue = sidesValue === "inherit" ? getCheckedValue("commonSides") : sidesValue;
+      elements.fileFlipSelect.disabled = effectiveSidesValue !== "duplex" || !printer.duplex;
+    }
+
+    function validatePageRange(value) {
+      const normalizedValue = value.trim().replaceAll("，", ",");
+      if (normalizedValue === "全部") return { valid: true, value: normalizedValue };
+      if (!/^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(normalizedValue)) return { valid: false, value: normalizedValue };
+      const rangesAreAscending = normalizedValue.split(",").every((part) => {
+        if (!part.includes("-")) return Number(part) > 0;
+        const [startPage, endPage] = part.split("-").map(Number);
+        return startPage > 0 && endPage >= startPage;
+      });
+      return { valid: rangesAreAscending, value: normalizedValue };
+    }
+
+    function saveFileSettings() {
+      const task = tasks.find((candidate) => candidate.id === selectedTaskId);
+      if (!task) return;
+      const pageValidation = validatePageRange(elements.pageRangeInput.value);
+      if (!pageValidation.valid) {
+        elements.pageRangeError.textContent = "页码格式无效，请输入“全部”或类似 1,3,5-8 的范围。";
+        elements.pageRangeInput.focus();
+        return;
+      }
+
+      task.overrides = {
+        pages: pageValidation.value,
+        color: elements.fileColorSelect.value,
+        sides: elements.fileSidesSelect.value,
+        flip: elements.fileFlipSelect.disabled ? "inherit" : elements.fileFlipSelect.value,
+        copies: Math.min(99, Math.max(1, Number(elements.fileCopiesInput.value) || 1))
+      };
+      const savedTaskName = task.name;
+      closeSettingsDrawer();
+      renderTasks();
+      showToast(`已保存单文件设置：${savedTaskName}`);
+    }
+
+    function hideSummary() {
+      elements.summaryPanel.classList.remove("is-visible");
+    }
+
+    function showSummary({ retried = false } = {}) {
+      const completedTasks = tasks.filter((task) => task.status === "success").length;
+      const failedTasks = tasks.filter((task) => task.status === "failed").length;
+      elements.successCount.textContent = completedTasks;
+      elements.failureCount.textContent = failedTasks;
+      elements.skippedCount.textContent = "0";
+      elements.summaryPanel.classList.add("is-visible");
+      elements.summaryLamp.className = `status-lamp${failedTasks > 0 ? " red" : ""}`;
+      elements.summaryTitle.textContent = failedTasks > 0 ? "批次执行完成，有任务失败" : (retried ? "失败项重试完成" : "批次执行完成");
+      elements.summarySubtitle.textContent = failedTasks > 0 ? "打印说明.txt 转换失败，其余任务已继续完成" : (retried ? "本次仅处理了上次失败的任务" : "所有任务均已成功输出");
+      elements.retryButton.style.display = failedTasks > 0 ? "block" : "none";
+    }
+
+    function wait(duration) {
+      return new Promise((resolve) => window.setTimeout(resolve, duration));
+    }
+
+    async function startPrinting() {
+      if (isPrinting || !printerProfiles[elements.printerSelect.value].online) return;
+      const printableTasks = tasks.filter((task) => task.status === "queued" || task.status === "failed");
+      if (printableTasks.length === 0) return;
+      isPrinting = true;
+      hideSummary();
+      closeSettingsDrawer();
+      updatePrintAvailability();
+      updateBatchStatus();
+      elements.clearButton.disabled = true;
+
+      for (const task of printableTasks) {
+        task.status = "printing";
+        if (task.type === "PPTX") task.pages = "26 页";
+        renderTasks();
+        await wait(420);
+        task.status = task.type === "TXT" ? "failed" : "success";
+        renderTasks();
+      }
+
+      isPrinting = false;
+      renderTasks();
+      showSummary();
+      showToast("批次执行完成：TXT 转换失败，其余任务已完成");
+    }
+
+    async function retryFailedTasks() {
+      const failedTasks = tasks.filter((task) => task.status === "failed");
+      if (isPrinting || failedTasks.length === 0) return;
+      isPrinting = true;
+      hideSummary();
+      updatePrintAvailability();
+      failedTasks.forEach((task) => { task.status = "printing"; });
+      renderTasks();
+      await wait(900);
+      failedTasks.forEach((task) => { task.status = "success"; });
+      isPrinting = false;
+      renderTasks();
+      showSummary({ retried: true });
+      showToast(`重试完成：仅处理 ${failedTasks.length} 个失败任务`);
+    }
+
+    function clearQueue() {
+      if (isPrinting || tasks.length === 0) return;
+      const clearedCount = tasks.length;
+      tasks = [];
+      hideSummary();
+      closeSettingsDrawer();
+      renderTasks();
+      showToast(`已清空当前批次，共移除 ${clearedCount} 个任务`);
+    }
+
+    function adjustCopies(amount) {
+      const currentValue = Number(elements.commonCopies.value) || 1;
+      elements.commonCopies.value = Math.min(99, Math.max(1, currentValue + amount));
+      renderTasks();
+    }
+
+    elements.taskList.addEventListener("click", (event) => {
+      const settingsButton = event.target.closest(".settings-action");
+      const removeButton = event.target.closest(".remove-action");
+      if (settingsButton) openSettingsDrawer(Number(settingsButton.dataset.taskId));
+      if (removeButton) removeTask(Number(removeButton.dataset.taskId));
+    });
+
+    elements.printerSelect.addEventListener("change", () => updatePrinterCapabilities(true));
+    document.querySelectorAll('input[name="commonColor"]').forEach((input) => input.addEventListener("change", renderTasks));
+    document.querySelectorAll('input[name="commonSides"]').forEach((input) => input.addEventListener("change", updateFlipAvailability));
+    document.querySelectorAll('input[name="commonFlip"]').forEach((input) => input.addEventListener("change", renderTasks));
+    elements.commonCopies.addEventListener("change", () => {
+      elements.commonCopies.value = Math.min(99, Math.max(1, Number(elements.commonCopies.value) || 1));
+      renderTasks();
+    });
+    document.getElementById("decreaseCopies").addEventListener("click", () => adjustCopies(-1));
+    document.getElementById("increaseCopies").addEventListener("click", () => adjustCopies(1));
+    document.getElementById("addFileButton").addEventListener("click", () => appendMockFiles("file"));
+    document.getElementById("addFolderButton").addEventListener("click", () => appendMockFiles("folder"));
+    elements.printButton.addEventListener("click", startPrinting);
+    elements.retryButton.addEventListener("click", retryFailedTasks);
+    elements.clearButton.addEventListener("click", clearQueue);
+    document.getElementById("closeDrawerButton").addEventListener("click", closeSettingsDrawer);
+    document.getElementById("cancelDrawerButton").addEventListener("click", closeSettingsDrawer);
+    elements.drawerBackdrop.addEventListener("click", closeSettingsDrawer);
+    document.getElementById("saveSettingsButton").addEventListener("click", saveFileSettings);
+    elements.fileSidesSelect.addEventListener("change", updateDrawerFlipAvailability);
+    document.getElementById("updateButton").addEventListener("click", () => showToast("当前已是最新原型版本 C.07"));
+    document.getElementById("helpButton").addEventListener("click", () => showToast("提示：追加文件后检查公共参数，单项设置可覆盖继承值"));
+
+    elements.dropZone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        appendMockFiles("file");
+      }
+    });
+    ["dragenter", "dragover"].forEach((eventName) => {
+      elements.dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        elements.dropZone.classList.add("is-dragging");
+        elements.dropTitle.textContent = "释放以追加，不会替换当前队列";
+      });
+    });
+    ["dragleave", "drop"].forEach((eventName) => {
+      elements.dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        elements.dropZone.classList.remove("is-dragging");
+        elements.dropTitle.textContent = "拖入文件或文件夹，追加到当前批次";
+      });
+    });
+    elements.dropZone.addEventListener("drop", () => appendMockFiles("file"));
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && elements.settingsDrawer.classList.contains("is-open")) closeSettingsDrawer();
+    });
+
+    window.addEventListener("load", initializeIcons);
+    renderTasks();
+    updatePrinterCapabilities();
+  </script>
+</body>
+</html>
