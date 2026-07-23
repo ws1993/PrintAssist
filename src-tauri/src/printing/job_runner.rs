@@ -1,14 +1,21 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use crate::contracts::{
     PrintBatchRequest, PrintBatchResult, PrintBatchResultItem, PrintQueueItemPayload,
 };
 use crate::documents::office::convert_office_to_pdf;
+use crate::documents::pdf_pages::extract_pages_to_temp_pdf;
 #[cfg(windows)]
 use crate::documents::print_shell::print_file_to_printer;
 use crate::documents::{detect_document_kind, DocumentKind};
 use crate::printers;
+
+/// Shell `printto` returns before the PDF handler finishes reading the file.
+/// Keep temp PDFs alive long enough for the association to open them.
+const TEMP_PRINT_FILE_RETENTION: Duration = Duration::from_secs(180);
 
 pub fn run_print_batch_sync(request: PrintBatchRequest) -> PrintBatchResult {
     let mut results = Vec::new();
@@ -59,12 +66,12 @@ fn print_single_item(item: PrintQueueItemPayload) -> PrintBatchResultItem {
         return failed_item(item, "自定义页码表达式为空");
     }
 
-    let mut temporary_pdf: Option<std::path::PathBuf> = None;
+    let mut temporary_paths: Vec<std::path::PathBuf> = Vec::new();
     let print_path = match kind {
         DocumentKind::Word | DocumentKind::Excel | DocumentKind::PowerPoint => {
             match convert_office_to_pdf(path, kind) {
                 Ok(pdf_path) => {
-                    temporary_pdf = Some(pdf_path.clone());
+                    temporary_paths.push(pdf_path.clone());
                     pdf_path
                 }
                 Err(office_error) => {
@@ -72,6 +79,15 @@ fn print_single_item(item: PrintQueueItemPayload) -> PrintBatchResultItem {
                         return failed_item(item, &office_error);
                     }
                     // Association fallback cannot prove full setting fidelity.
+                    // Custom page range requires a PDF intermediate, so block that path.
+                    if item.settings.page_range_mode == "custom" {
+                        return failed_item(
+                            item,
+                            &format!(
+                                "{office_error}；自定义页码需要 Office 转 PDF，无法使用关联程序回退"
+                            ),
+                        );
+                    }
                     path.to_path_buf()
                 }
             }
@@ -79,22 +95,43 @@ fn print_single_item(item: PrintQueueItemPayload) -> PrintBatchResultItem {
         _ => path.to_path_buf(),
     };
 
-    if item.settings.page_range_mode == "custom" {
-        // Shell printto cannot guarantee custom page-range fidelity for all associations.
-        // Surface an explicit limitation instead of pretending full control.
-        if matches!(
-            kind,
-            DocumentKind::Pdf | DocumentKind::Word | DocumentKind::Excel | DocumentKind::PowerPoint
-        ) {
-            if let Some(temporary_path) = temporary_pdf {
-                let _ = fs::remove_file(temporary_path);
+    let print_path = if item.settings.page_range_mode == "custom" {
+        match kind {
+            DocumentKind::Pdf
+            | DocumentKind::Word
+            | DocumentKind::Excel
+            | DocumentKind::PowerPoint => {
+                // PDF/Office: extract selected pages into a temp PDF, then shell-print that file.
+                match extract_pages_to_temp_pdf(
+                    &print_path,
+                    &item.settings.page_range_expression,
+                ) {
+                    Ok(ranged_pdf) => {
+                        temporary_paths.push(ranged_pdf.clone());
+                        ranged_pdf
+                    }
+                    Err(error) => {
+                        cleanup_temporary_paths(&temporary_paths);
+                        return failed_item(item, &error);
+                    }
+                }
             }
-            return failed_item(
-                item,
-                "当前引擎暂不能可靠保证 PDF/Office 的自定义页码范围；请使用全部页或后续版本的内置渲染路径",
-            );
+            // Image/text are single-surface for printto; multi-page custom ranges are not defined.
+            DocumentKind::Image | DocumentKind::Text => {
+                cleanup_temporary_paths(&temporary_paths);
+                return failed_item(
+                    item,
+                    "图片/文本不支持自定义页码范围，请使用全部页",
+                );
+            }
+            DocumentKind::Unknown => {
+                cleanup_temporary_paths(&temporary_paths);
+                return failed_item(item, "不支持的文件类型");
+            }
         }
-    }
+    } else {
+        print_path
+    };
 
     #[cfg(windows)]
     let print_result = print_file_to_printer(
@@ -105,9 +142,9 @@ fn print_single_item(item: PrintQueueItemPayload) -> PrintBatchResultItem {
     #[cfg(not(windows))]
     let print_result: Result<(), String> = Err("当前平台不支持打印".to_string());
 
-    if let Some(temporary_path) = temporary_pdf {
-        let _ = fs::remove_file(temporary_path);
-    }
+    // Do not delete immediately: Adobe/Edge printto is asynchronous and will
+    // report "Couldn't open file ... for printing" if the temp PDF is gone.
+    schedule_temporary_cleanup(temporary_paths);
 
     match print_result {
         Ok(()) => PrintBatchResultItem {
@@ -158,4 +195,20 @@ fn failed_item(item: PrintQueueItemPayload, message: &str) -> PrintBatchResultIt
         status: "failed".to_string(),
         message: Some(message.to_string()),
     }
+}
+
+fn cleanup_temporary_paths(paths: &[PathBuf]) {
+    for path in paths {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn schedule_temporary_cleanup(paths: Vec<PathBuf>) {
+    if paths.is_empty() {
+        return;
+    }
+    thread::spawn(move || {
+        thread::sleep(TEMP_PRINT_FILE_RETENTION);
+        cleanup_temporary_paths(&paths);
+    });
 }

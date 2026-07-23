@@ -52,6 +52,16 @@ pub async fn pick_folder_files(app: AppHandle) -> Result<Vec<String>, String> {
     Ok(paths)
 }
 
+/// Expand dropped file/folder paths into supported printable file paths.
+#[tauri::command]
+pub async fn expand_file_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    let mut expanded = Vec::new();
+    for path in paths {
+        collect_path_argument(&path, &mut expanded);
+    }
+    Ok(expanded)
+}
+
 #[tauri::command]
 pub async fn run_print_batch(request: PrintBatchRequest) -> Result<PrintBatchResult, String> {
     tauri::async_runtime::spawn_blocking(move || run_print_batch_sync(request))

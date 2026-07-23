@@ -1,4 +1,6 @@
 pub mod office;
+pub mod page_range;
+pub mod pdf_pages;
 
 #[cfg(windows)]
 pub mod print_shell;

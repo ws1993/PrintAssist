@@ -26,6 +26,7 @@ tauri-plugin-single-instance = "2"
 walkdir = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 open = "5"
+lopdf = "0.34"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.58.0", features = [

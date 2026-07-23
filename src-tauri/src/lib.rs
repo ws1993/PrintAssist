@@ -42,6 +42,7 @@ pub fn run() {
             commands::list_system_printers,
             commands::pick_files,
             commands::pick_folder_files,
+            commands::expand_file_paths,
             commands::run_print_batch,
             commands::check_for_app_update,
             commands::install_app_update,

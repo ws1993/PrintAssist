@@ -12,12 +12,15 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import type { DragEvent } from 'react';
 import {
   checkForAppUpdate,
+  expandFilePaths,
   installAppUpdate,
+  isTauriRuntime,
   listSystemPrinters,
   pickFiles,
   pickFolderFiles,
   runPrintBatch,
   subscribeIncomingFiles,
+  subscribeNativeDragDrop,
 } from './api/nativeBridge';
 import {
   createDefaultGlobalSettings,
@@ -93,6 +96,30 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    // Tauri 2: 桌面拖放路径只能从原生 DragDrop 事件拿到，不能依赖 HTML5 File.path
+    return subscribeNativeDragDrop({
+      onHoverChange: setIsDragOver,
+      onDrop: (paths) => {
+        void (async () => {
+          try {
+            const expanded = await expandFilePaths(paths);
+            if (expanded.length === 0) {
+              if (paths.length > 0) {
+                message.warning('未找到可打印的文件');
+              }
+              return;
+            }
+            dispatch({ type: 'append_files', paths: expanded });
+            message.success(`已追加 ${expanded.length} 个文件`);
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : '处理拖放文件失败');
+          }
+        })();
+      },
+    });
+  }, []);
+
   const appendPaths = (paths: string[]) => {
     if (paths.length === 0) {
       return;
@@ -120,6 +147,10 @@ export function App() {
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragOver(false);
+    // 桌面端由 subscribeNativeDragDrop 处理；HTML5 File.path 在 Tauri/WebView2 中为空
+    if (isTauriRuntime()) {
+      return;
+    }
     const paths = Array.from(event.dataTransfer.files)
       .map((file) => (file as File & { path?: string }).path)
       .filter((path): path is string => Boolean(path));

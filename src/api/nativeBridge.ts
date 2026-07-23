@@ -93,3 +93,65 @@ export function subscribeIncomingFiles(
     unlisten?.();
   };
 }
+
+/**
+ * Tauri 2 桌面拖放：通过原生 onDragDropEvent 获取本地路径。
+ * HTML5 DataTransfer.File.path 在 WebView2 中不可用，不能作为桌面路径来源。
+ */
+export function subscribeNativeDragDrop(handlers: {
+  onHoverChange?: (active: boolean) => void;
+  onDrop?: (paths: string[]) => void;
+}): () => void {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+
+  let disposed = false;
+  let unlisten: (() => void) | undefined;
+
+  void import('@tauri-apps/api/webview').then(({ getCurrentWebview }) => {
+    if (disposed) {
+      return;
+    }
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        switch (event.payload.type) {
+          case 'enter':
+          case 'over':
+            handlers.onHoverChange?.(true);
+            break;
+          case 'leave':
+            handlers.onHoverChange?.(false);
+            break;
+          case 'drop':
+            handlers.onHoverChange?.(false);
+            handlers.onDrop?.(event.payload.paths ?? []);
+            break;
+          default:
+            break;
+        }
+      })
+      .then((stop) => {
+        if (disposed) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+      });
+  });
+
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
+}
+
+/** 将拖入的文件/文件夹路径展开为可打印文件列表（与右键/文件夹选择一致）。 */
+export async function expandFilePaths(paths: string[]): Promise<string[]> {
+  if (!isTauriRuntime() || paths.length === 0) {
+    return paths;
+  }
+  return invokeCommand<string[]>('expand_file_paths', { paths });
+}
+
+export { isTauriRuntime };
