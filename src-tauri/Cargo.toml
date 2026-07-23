@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Native printer discovery baseline for PrintAssist"
 edition = "2021"
 rust-version = "1.81"
+default-run = "print-assist"
 
 [lib]
 name = "print_assist_lib"
