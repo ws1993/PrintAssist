@@ -23,6 +23,8 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2",
     "@rsbuild/core": "2.1.7",
     "@rsbuild/plugin-react": "2.1.0",
     "@tauri-apps/cli": "2.11.4",
