@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::contracts::{PrintBatchRequest, PrintBatchResult, ProxyConfig, SystemPrinter, UpdateCheckResult};
@@ -10,6 +10,7 @@ use crate::printing::run_print_batch_sync;
 
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/ws1993/PrintAssist/releases/latest";
+const GITHUB_RELEASES_PAGE: &str = "https://github.com/ws1993/PrintAssist/releases/latest";
 
 #[tauri::command]
 pub async fn list_system_printers() -> Result<Vec<SystemPrinter>, String> {
@@ -113,6 +114,8 @@ pub async fn check_for_app_update(
             available: false,
             version: None,
             body: Some("尚未发布 GitHub Release".to_string()),
+            download_url: None,
+            download_size: None,
         });
     }
 
@@ -138,6 +141,24 @@ pub async fn check_for_app_update(
     let current_version = env!("CARGO_PKG_VERSION").to_string();
     let available = !remote_tag.is_empty() && remote_tag != current_version;
 
+    // Find the NSIS installer asset URL and size
+    let mut download_url: Option<String> = None;
+    let mut download_size: Option<u64> = None;
+    if let Some(assets) = payload.get("assets").and_then(|v| v.as_array()) {
+        for asset in assets {
+            if let Some(name) = asset.get("name").and_then(|v| v.as_str()) {
+                if name.ends_with("-setup.exe") || name.ends_with("_x64-setup.exe") {
+                    download_url = asset
+                        .get("browser_download_url")
+                        .and_then(|v| v.as_str())
+                        .map(|v| v.to_string());
+                    download_size = asset.get("size").and_then(|v| v.as_u64());
+                    break;
+                }
+            }
+        }
+    }
+
     Ok(UpdateCheckResult {
         available,
         version: if remote_tag.is_empty() {
@@ -146,14 +167,126 @@ pub async fn check_for_app_update(
             Some(remote_tag)
         },
         body,
+        download_url,
+        download_size,
     })
 }
 
+/// Download the update installer and execute it.
+/// Emits progress events: "update-download-progress" with { percent, downloaded, total }
+/// Emits completion: "update-download-complete" with { path }
+/// Emits error: "update-download-error" with { message }
 #[tauri::command]
-pub async fn install_app_update() -> Result<(), String> {
-    // First version opens the release page for user-confirmed download/install.
-    // Signed in-app installer can replace this after CI signing secrets are configured.
-    open::that("https://github.com/ws1993/PrintAssist/releases/latest")
+pub async fn download_and_install_update(
+    app: AppHandle,
+    download_url: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<String, String> {
+    use futures_util::StreamExt;
+    use std::fs::File;
+    use std::io::Write;
+
+    let mut client_builder = reqwest::Client::builder()
+        .user_agent("PrintAssist-Updater");
+
+    if let Some(ref proxy_config) = proxy {
+        if !proxy_config.use_system_proxy {
+            if let Some(ref custom_url) = proxy_config.custom_proxy_url {
+                let mut proxy = reqwest::Proxy::all(custom_url)
+                    .map_err(|error| format!("创建自定义代理失败：{error}"))?;
+                match (&proxy_config.username, &proxy_config.password) {
+                    (Some(user), Some(pass)) => {
+                        proxy = proxy.basic_auth(user.as_str(), pass.as_str());
+                    }
+                    _ => {}
+                }
+                client_builder = client_builder.proxy(proxy);
+            } else {
+                client_builder = client_builder.no_proxy();
+            }
+        }
+    }
+
+    let client = client_builder
+        .build()
+        .map_err(|error| format!("创建 HTTP 客户端失败：{error}"))?;
+
+    let response = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|error| format!("下载更新失败：{error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("下载返回状态 {}", response.status()));
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+
+    // Determine filename from URL
+    let filename = download_url
+        .rsplit('/')
+        .next()
+        .unwrap_or("update.exe")
+        .to_string();
+
+    // Save to temp directory
+    let temp_dir = std::env::temp_dir().join("PrintAssist_Update");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let file_path = temp_dir.join(&filename);
+
+    let mut file = File::create(&file_path)
+        .map_err(|error| format!("创建临时文件失败：{error}"))?;
+
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|error| format!("下载数据失败：{error}"))?;
+        file.write_all(&chunk)
+            .map_err(|error| format!("写入文件失败：{error}"))?;
+        downloaded += chunk.len() as u64;
+
+        let percent = if total_size > 0 {
+            ((downloaded as f64 / total_size as f64) * 100.0) as u32
+        } else {
+            0
+        };
+
+        let _ = app.emit("update-download-progress", serde_json::json!({
+            "percent": percent,
+            "downloaded": downloaded,
+            "total": total_size,
+        }));
+    }
+
+    file.flush().map_err(|error| format!("刷新文件失败：{error}"))?;
+    drop(file);
+
+    let _ = app.emit("update-download-complete", serde_json::json!({
+        "path": file_path.to_string_lossy().to_string(),
+    }));
+
+    // Execute the installer silently
+    let installer_path = file_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new(&installer_path)
+            .arg("/S") // Silent install for NSIS
+            .spawn()
+            .ok();
+    });
+
+    // Give the installer a moment to start, then exit the app
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    app.exit(0);
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Open the GitHub releases page in the default browser as a fallback.
+#[tauri::command]
+pub async fn open_release_page() -> Result<(), String> {
+    open::that(GITHUB_RELEASES_PAGE)
         .map_err(|error| format!("打开下载页失败：{error}"))
 }
 

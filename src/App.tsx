@@ -13,7 +13,6 @@ import type { DragEvent } from 'react';
 import {
   checkForAppUpdate,
   expandFilePaths,
-  installAppUpdate,
   isTauriRuntime,
   listSystemPrinters,
   pickFiles,
@@ -37,6 +36,7 @@ import { PrintSummary } from './features/results/PrintSummary';
 import { FileSettingsDrawer } from './features/settings/FileSettingsDrawer';
 import { GlobalSettingsPanel } from './features/settings/GlobalSettingsPanel';
 import { ProxySettingsPanel } from './features/settings/ProxySettingsPanel';
+import { UpdateModal, type UpdateInfo } from './features/update/UpdateModal';
 import {
   createDefaultProxySettings,
   getProxyConfig,
@@ -58,6 +58,8 @@ export function App() {
   const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [allowAssociationFallback, setAllowAssociationFallback] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [pendingUpdateInfo, setPendingUpdateInfo] = useState<UpdateInfo | null>(null);
   const [proxySettings, setProxySettings] = useState<ProxySettings>(() => {
     try {
       const saved = localStorage.getItem('proxySettings');
@@ -311,7 +313,14 @@ export function App() {
     }
   };
 
-  const handleCheckUpdate = async () => {
+  const promptInstallUpdate = (updateInfo: UpdateInfo) => {
+    setPendingUpdateInfo(updateInfo);
+    setUpdateModalOpen(true);
+  };
+
+  /** 检查更新；silent 用于启动时：无更新/失败均不打扰用户。 */
+  const runUpdateCheck = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     try {
       const proxyConfig = getProxyConfig(proxySettings);
       const updateInfo = await checkForAppUpdate({
@@ -321,22 +330,41 @@ export function App() {
         password: proxyConfig.password,
       });
       if (!updateInfo.available) {
-        message.success('当前已是最新版本');
+        if (!silent) {
+          message.success('当前已是最新版本');
+        }
         return;
       }
-      Modal.confirm({
-        title: `发现新版本 ${updateInfo.version ?? ''}`.trim(),
-        content: updateInfo.body || '是否下载并安装更新？安装前会退出应用。',
-        okText: '下载并安装',
-        cancelText: '稍后',
-        onOk: async () => {
-          await installAppUpdate();
-        },
-      });
+      promptInstallUpdate(updateInfo);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '检查更新失败');
+      if (!silent) {
+        message.error(error instanceof Error ? error.message : '检查更新失败');
+      }
     }
   };
+
+  const handleCheckUpdate = async () => {
+    await runUpdateCheck({ silent: false });
+  };
+
+  // 启动后自动检查更新：仅在有新版本时弹窗提示
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    let cancelled = false;
+    const startupCheckTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        void runUpdateCheck({ silent: true });
+      }
+    }, 800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startupCheckTimer);
+    };
+    // 仅启动时检查一次，使用首屏已加载的代理设置
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <ConfigProvider
@@ -490,6 +518,15 @@ export function App() {
       >
         <ProxySettingsPanel settings={proxySettings} onChange={setProxySettings} />
       </Modal>
+      <UpdateModal
+        open={updateModalOpen}
+        updateInfo={pendingUpdateInfo}
+        proxyConfig={getProxyConfig(proxySettings)}
+        onClose={() => {
+          setUpdateModalOpen(false);
+          setPendingUpdateInfo(null);
+        }}
+      />
     </ConfigProvider>
   );
 }

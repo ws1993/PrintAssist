@@ -52,24 +52,79 @@ export interface ProxyConfigPayload {
   password?: string;
 }
 
-export async function checkForAppUpdate(
-  proxy?: ProxyConfigPayload,
-): Promise<{
+export interface UpdateCheckResult {
   available: boolean;
   version?: string;
   body?: string;
-}> {
+  downloadUrl?: string;
+  downloadSize?: number;
+}
+
+export async function checkForAppUpdate(
+  proxy?: ProxyConfigPayload,
+): Promise<UpdateCheckResult> {
   if (!isTauriRuntime()) {
     return { available: false };
   }
-  return invokeCommand('check_for_app_update', { proxy: proxy ?? null });
+  return invokeCommand<UpdateCheckResult>('check_for_app_update', { proxy: proxy ?? null });
 }
 
-export async function installAppUpdate(): Promise<void> {
+export interface UpdateDownloadProgress {
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+export async function downloadAndInstallUpdate(
+  downloadUrl: string,
+  proxy?: ProxyConfigPayload,
+): Promise<string> {
   if (!isTauriRuntime()) {
-    throw new Error('当前不在桌面运行时中，无法安装更新');
+    throw new Error('当前不在桌面运行时中，无法下载更新');
   }
-  await invokeCommand('install_app_update');
+  return invokeCommand<string>('download_and_install_update', {
+    downloadUrl,
+    proxy: proxy ?? null,
+  });
+}
+
+export async function openReleasePage(): Promise<void> {
+  if (!isTauriRuntime()) {
+    window.open('https://github.com/ws1993/PrintAssist/releases/latest', '_blank');
+    return;
+  }
+  await invokeCommand('open_release_page');
+}
+
+export function subscribeUpdateDownloadProgress(
+  onProgress: (progress: UpdateDownloadProgress) => void,
+): () => void {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+
+  let disposed = false;
+  let unlisten: (() => void) | undefined;
+
+  void import('@tauri-apps/api/event').then(({ listen }) => {
+    if (disposed) {
+      return;
+    }
+    void listen<UpdateDownloadProgress>('update-download-progress', (event) => {
+      onProgress(event.payload);
+    }).then((stop) => {
+      if (disposed) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+    });
+  });
+
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
 }
 
 export function subscribeIncomingFiles(

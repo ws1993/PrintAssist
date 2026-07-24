@@ -45,7 +45,8 @@ pub fn run() {
             commands::expand_file_paths,
             commands::run_print_batch,
             commands::check_for_app_update,
-            commands::install_app_update,
+            commands::download_and_install_update,
+            commands::open_release_page,
             commands::validate_supported_path
         ])
         .run(tauri::generate_context!())

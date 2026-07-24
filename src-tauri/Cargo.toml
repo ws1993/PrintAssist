@@ -24,7 +24,9 @@ tauri-utils = "=2.0.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 walkdir = "2"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["time"] }
 open = "5"
 lopdf = "0.34"
 

@@ -2977,6 +2977,7 @@ checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 name = "print-assist"
 version = "1.0.2"
 dependencies = [
+ "futures-util",
  "lopdf",
  "open",
  "reqwest",
@@ -2990,6 +2991,7 @@ dependencies = [
  "tauri-runtime",
  "tauri-runtime-wry",
  "tauri-utils",
+ "tokio",
  "walkdir",
  "windows",
 ]

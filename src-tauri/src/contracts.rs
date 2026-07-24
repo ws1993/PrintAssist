@@ -104,6 +104,10 @@ pub struct UpdateCheckResult {
     pub version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
