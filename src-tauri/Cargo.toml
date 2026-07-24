@@ -1,6 +1,6 @@
 [package]
 name = "print-assist"
-version = "1.0.5"
+version = "1.0.6"
 description = "Native printer discovery baseline for PrintAssist"
 edition = "2021"
 rust-version = "1.81"
