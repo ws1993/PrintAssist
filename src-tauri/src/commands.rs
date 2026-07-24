@@ -15,20 +15,11 @@ const GITHUB_RELEASES_PAGE: &str = "https://github.com/ws1993/PrintAssist/releas
 /// Launch the downloaded NSIS installer so it survives app exit.
 ///
 /// On Windows the installer must:
-/// 1. start after PrintAssist.exe unlocks (short delay),
+/// 1. start after PrintAssist.exe unlocks (wait for this process to exit),
 /// 2. run outside the Tauri/WebView2 process tree so `app.exit` does not kill it.
 fn launch_nsis_installer(installer_path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        use std::process::{Command, Stdio};
-
-        // CREATE_NO_WINDOW: hide the helper console
-        // CREATE_NEW_PROCESS_GROUP / CREATE_BREAKAWAY_FROM_JOB: keep installer alive after exit
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
-
         if !installer_path.is_file() {
             return Err(format!("安装包不存在：{}", installer_path.display()));
         }
@@ -40,39 +31,81 @@ fn launch_nsis_installer(installer_path: &Path) -> Result<(), String> {
             return Err("安装包文件过小，下载可能不完整".to_string());
         }
 
-        // Quote-safe path for the delayed cmd script.
-        let installer = installer_path
+        // Normalize to a normal Win32 path (strip \\?\ prefix from canonicalize).
+        let absolute_installer = installer_path
+            .canonicalize()
+            .unwrap_or_else(|_| installer_path.to_path_buf());
+        let installer = absolute_installer
             .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .replace('\'', "''")
             .replace('"', "")
             .to_string();
 
-        // ping ~3s delay so the app can exit and unlock the installed executable.
-        // `start ""` detaches NSIS from the helper cmd process.
-        let delayed_command =
-            format!("ping 127.0.0.1 -n 4 >nul & start \"\" \"{installer}\" /S");
+        let helper_dir = std::env::temp_dir().join("PrintAssist_Update");
+        std::fs::create_dir_all(&helper_dir)
+            .map_err(|error| format!("创建更新目录失败：{error}"))?;
 
-        let creation_flag_candidates = [
-            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
-            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-            CREATE_NO_WINDOW,
-        ];
+        // Helper waits until THIS process exits (file unlock), then starts NSIS.
+        // Launched via ShellExecute so it is owned by the shell, not Tauri's job object.
+        // Installer runs with UI (not /S) so failures are visible instead of "nothing happens".
+        let app_process_id = std::process::id();
+        let helper_script_path = helper_dir.join("launch_installer.ps1");
+        let log_path = helper_dir
+            .join("install.log")
+            .to_string_lossy()
+            .replace('\'', "''")
+            .to_string();
+        let script_content = format!(
+            "$ErrorActionPreference = 'Continue'\r\n\
+             $log = '{log_path}'\r\n\
+             function Write-UpdateLog([string]$message) {{\r\n\
+               $line = (Get-Date -Format o) + ' ' + $message\r\n\
+               Add-Content -LiteralPath $log -Value $line -Encoding UTF8\r\n\
+             }}\r\n\
+             Write-UpdateLog 'helper started; waiting for pid {app_process_id}'\r\n\
+             $deadline = (Get-Date).AddSeconds(90)\r\n\
+             while ((Get-Date) -lt $deadline) {{\r\n\
+               if (-not (Get-Process -Id {app_process_id} -ErrorAction SilentlyContinue)) {{ break }}\r\n\
+               Start-Sleep -Milliseconds 250\r\n\
+             }}\r\n\
+             if (Get-Process -Id {app_process_id} -ErrorAction SilentlyContinue) {{\r\n\
+               Write-UpdateLog 'timeout waiting for app exit; launching installer anyway'\r\n\
+             }} else {{\r\n\
+               Write-UpdateLog 'app exited'\r\n\
+             }}\r\n\
+             Start-Sleep -Milliseconds 800\r\n\
+             $installer = '{installer}'\r\n\
+             if (-not (Test-Path -LiteralPath $installer)) {{\r\n\
+               Write-UpdateLog \"installer missing: $installer\"\r\n\
+               exit 2\r\n\
+             }}\r\n\
+             Write-UpdateLog \"starting installer: $installer\"\r\n\
+             try {{\r\n\
+               $process = Start-Process -FilePath $installer -PassThru\r\n\
+               Write-UpdateLog (\"installer pid=\" + $process.Id)\r\n\
+             }} catch {{\r\n\
+               Write-UpdateLog (\"Start-Process failed: \" + $_.Exception.Message)\r\n\
+               exit 3\r\n\
+             }}\r\n"
+        );
+        std::fs::write(&helper_script_path, script_content)
+            .map_err(|error| format!("写入安装启动脚本失败：{error}"))?;
 
-        let mut last_error_message = String::from("未知错误");
-        for creation_flags in creation_flag_candidates {
-            match Command::new("cmd.exe")
-                .args(["/C", &delayed_command])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .creation_flags(creation_flags)
-                .spawn()
-            {
-                Ok(_) => return Ok(()),
-                Err(error) => last_error_message = error.to_string(),
-            }
-        }
+        let script_path = helper_script_path
+            .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .replace('"', "")
+            .to_string();
 
-        Err(format!("启动安装程序失败：{last_error_message}"))
+        shell_execute_open(
+            "powershell.exe",
+            &format!(
+                "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{script_path}\""
+            ),
+        )?;
+
+        Ok(())
     }
 
     #[cfg(not(windows))]
@@ -80,6 +113,49 @@ fn launch_nsis_installer(installer_path: &Path) -> Result<(), String> {
         let _ = installer_path;
         Err("当前平台不支持应用内安装".to_string())
     }
+}
+
+/// Start a process through the Windows shell so it is not tied to Tauri's process tree.
+#[cfg(windows)]
+fn shell_execute_open(file: &str, parameters: &str) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+    fn to_wide(value: &str) -> Vec<u16> {
+        OsStr::new(value)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    let operation = to_wide("open");
+    let file_wide = to_wide(file);
+    let parameters_wide = to_wide(parameters);
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            PCWSTR(operation.as_ptr()),
+            PCWSTR(file_wide.as_ptr()),
+            PCWSTR(parameters_wide.as_ptr()),
+            PCWSTR::null(),
+            SW_HIDE,
+        )
+    };
+
+    // ShellExecute returns > 32 on success.
+    if result.0 as usize <= 32 {
+        return Err(format!(
+            "启动安装助手失败，ShellExecute 返回码 {}",
+            result.0 as usize
+        ));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -346,7 +422,7 @@ pub async fn download_and_install_update(
     // Must succeed before exiting; otherwise the app would close with no installer.
     launch_nsis_installer(&file_path)?;
 
-    // Helper cmd is already running with a delay; exit so files unlock for NSIS.
+    // Helper is waiting for this process to exit, then starts the installer UI.
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     app.exit(0);
 

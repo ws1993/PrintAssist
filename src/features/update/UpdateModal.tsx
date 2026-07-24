@@ -217,8 +217,8 @@ export function UpdateModal({ open, updateInfo, proxyConfig, onClose }: UpdateMo
         {!hasError && (
           <Text className="update-modal-hint">
             {isDownloading
-              ? '下载完成后将自动退出并安装'
-              : '安装前将自动退出应用，安装完成后重新打开'}
+              ? '下载完成后将退出应用并打开安装程序'
+              : '安装前会自动退出应用，随后弹出安装向导'}
           </Text>
         )}
       </div>
