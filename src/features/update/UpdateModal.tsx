@@ -4,7 +4,6 @@ import {
   ArrowDownToLine,
   Download,
   ExternalLink,
-  Loader2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -21,7 +20,6 @@ const { Text } = Typography;
 export interface UpdateInfo {
   available: boolean;
   version?: string;
-  body?: string;
   downloadUrl?: string;
   downloadSize?: number;
 }
@@ -101,13 +99,6 @@ export function UpdateModal({ open, updateInfo, proxyConfig, onClose }: UpdateMo
     }
   };
 
-  const changelogLines = updateInfo?.body
-    ? updateInfo.body
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-    : [];
-
   const isDownloading = downloadState === 'downloading';
   const hasError = downloadState === 'error';
   const hasDownloadUrl = Boolean(updateInfo?.downloadUrl);
@@ -168,19 +159,6 @@ export function UpdateModal({ open, updateInfo, proxyConfig, onClose }: UpdateMo
                   ? `${formatFileSize(progress.downloaded)} / ${formatFileSize(progress.total)}`
                   : formatFileSize(progress.downloaded)}
               </Text>
-            </div>
-          </div>
-        )}
-
-        {!isDownloading && !hasError && changelogLines.length > 0 && (
-          <div className="update-modal-changelog">
-            <Text className="update-modal-changelog-label">更新内容</Text>
-            <div className="update-modal-changelog-body">
-              {changelogLines.map((line, index) => (
-                <div key={index} className="update-modal-changelog-line">
-                  {line}
-                </div>
-              ))}
             </div>
           </div>
         )}
