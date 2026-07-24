@@ -1,94 +1,58 @@
+//! Office document conversion helpers.
+//!
+//! On Windows, conversion uses in-process Office COM (IDispatch) — no PowerShell
+//! host window. Desktop Office must be installed for conversion fidelity.
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use super::DocumentKind;
 
-/// Converts Office documents to a temporary PDF via installed desktop Office COM automation.
+/// Converts Office documents to a temporary PDF via installed desktop Office.
 pub fn convert_office_to_pdf(path: &Path, kind: DocumentKind) -> Result<PathBuf, String> {
     if !path.exists() {
         return Err(format!("文件不存在：{}", path.display()));
     }
 
-    let output_path = std::env::temp_dir().join(format!(
-        "printassist-{}-{}.pdf",
-        std::process::id(),
-        path.file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("document")
-    ));
-
-    let script = match kind {
-        DocumentKind::Word => format!(
-            r#"
-$ErrorActionPreference = 'Stop'
-$word = New-Object -ComObject Word.Application
-$word.Visible = $false
-try {{
-  $document = $word.Documents.Open('{input}')
-  $document.ExportAsFixedFormat('{output}', 17)
-  $document.Close([ref]0)
-}} finally {{
-  $word.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
-}}
-"#,
-            input = escape_for_powershell(path),
-            output = escape_for_powershell(&output_path)
-        ),
-        DocumentKind::Excel => format!(
-            r#"
-$ErrorActionPreference = 'Stop'
-$excel = New-Object -ComObject Excel.Application
-$excel.Visible = $false
-$excel.DisplayAlerts = $false
-try {{
-  $workbook = $excel.Workbooks.Open('{input}')
-  $workbook.ExportAsFixedFormat(0, '{output}')
-  $workbook.Close($false)
-}} finally {{
-  $excel.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
-}}
-"#,
-            input = escape_for_powershell(path),
-            output = escape_for_powershell(&output_path)
-        ),
-        DocumentKind::PowerPoint => format!(
-            r#"
-$ErrorActionPreference = 'Stop'
-$powerpoint = New-Object -ComObject PowerPoint.Application
-try {{
-  $presentation = $powerpoint.Presentations.Open('{input}', $true, $false, $false)
-  $presentation.ExportAsFixedFormat('{output}', 2)
-  $presentation.Close()
-}} finally {{
-  $powerpoint.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($powerpoint) | Out-Null
-}}
-"#,
-            input = escape_for_powershell(path),
-            output = escape_for_powershell(&output_path)
-        ),
+    match kind {
+        DocumentKind::Word | DocumentKind::Excel | DocumentKind::PowerPoint => {}
         _ => return Err("不是 Office 文档".to_string()),
+    }
+
+    #[cfg(windows)]
+    {
+        convert_office_to_pdf_windows(path, kind)
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (path, kind);
+        Err("当前平台不支持 Office 转 PDF".to_string())
+    }
+}
+
+#[cfg(windows)]
+fn convert_office_to_pdf_windows(path: &Path, kind: DocumentKind) -> Result<PathBuf, String> {
+    use super::office_com::{absolute_path_text, temporary_pdf_output_path, ComApartment};
+
+    let _apartment = ComApartment::enter()?;
+    let absolute_input = absolute_path_text(path)?;
+    let output_path = temporary_pdf_output_path(path);
+    let output_text = output_path
+        .to_string_lossy()
+        .trim_start_matches(r"\\?\")
+        .to_string();
+
+    // Remove a stale file with the same name so existence checks are trustworthy.
+    let _ = std::fs::remove_file(&output_path);
+
+    let convert_result = match kind {
+        DocumentKind::Word => convert_word_to_pdf(&absolute_input, &output_text),
+        DocumentKind::Excel => convert_excel_to_pdf(&absolute_input, &output_text),
+        DocumentKind::PowerPoint => convert_powerpoint_to_pdf(&absolute_input, &output_text),
+        _ => Err("不是 Office 文档".to_string()),
     };
 
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &script,
-        ])
-        .output()
-        .map_err(|error| format!("启动 PowerShell 失败：{error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "Office 转换失败，请确认已安装桌面版 Office。详情：{stderr}"
-        ));
-    }
+    convert_result?;
 
     if !output_path.exists() {
         return Err("Office 转换未生成 PDF 文件".to_string());
@@ -97,6 +61,110 @@ try {{
     Ok(output_path)
 }
 
-fn escape_for_powershell(path: &Path) -> String {
-    path.to_string_lossy().replace('\'', "''")
+#[cfg(windows)]
+fn convert_word_to_pdf(absolute_input: &str, output_text: &str) -> Result<(), String> {
+    use windows::core::VARIANT;
+
+    use super::office_com::DispatchObject;
+
+    let application = DispatchObject::create_application("Word.Application")?;
+    let result = (|| {
+        let _ = application.put_bool_property("Visible", false);
+        let _ = application.put_i32_property("DisplayAlerts", 0);
+
+        let documents = application.get_object_property("Documents")?;
+        let document_variant = documents.call(
+            "Open",
+            vec![
+                VARIANT::from(absolute_input),
+                VARIANT::from(false),
+                VARIANT::from(true),
+            ],
+        )?;
+        let document = DispatchObject::from_variant(&document_variant)?;
+
+        // ExportAsFixedFormat(OutputFileName, ExportFormat=wdExportFormatPDF=17)
+        let export_result = document.call_unit(
+            "ExportAsFixedFormat",
+            vec![VARIANT::from(output_text), VARIANT::from(17_i32)],
+        );
+
+        let _ = document.call_unit("Close", vec![VARIANT::from(0_i32)]);
+        export_result
+    })();
+
+    let _ = application.call_unit("Quit", vec![VARIANT::from(0_i32)]);
+    result.map_err(|error| format!("Word 转 PDF 失败：{error}"))
+}
+
+#[cfg(windows)]
+fn convert_excel_to_pdf(absolute_input: &str, output_text: &str) -> Result<(), String> {
+    use windows::core::VARIANT;
+
+    use super::office_com::DispatchObject;
+
+    let application = DispatchObject::create_application("Excel.Application")?;
+    let result = (|| {
+        let _ = application.put_bool_property("Visible", false);
+        let _ = application.put_bool_property("DisplayAlerts", false);
+
+        let workbooks = application.get_object_property("Workbooks")?;
+        let workbook_variant = workbooks.call(
+            "Open",
+            vec![
+                VARIANT::from(absolute_input),
+                VARIANT::from(0_i32),
+                VARIANT::from(true),
+            ],
+        )?;
+        let workbook = DispatchObject::from_variant(&workbook_variant)?;
+
+        // ExportAsFixedFormat(Type=xlTypePDF=0, Filename)
+        let export_result = workbook.call_unit(
+            "ExportAsFixedFormat",
+            vec![VARIANT::from(0_i32), VARIANT::from(output_text)],
+        );
+
+        let _ = workbook.call_unit("Close", vec![VARIANT::from(false)]);
+        export_result
+    })();
+
+    let _ = application.call_unit("Quit", Vec::new());
+    result.map_err(|error| format!("Excel 转 PDF 失败：{error}"))
+}
+
+#[cfg(windows)]
+fn convert_powerpoint_to_pdf(absolute_input: &str, output_text: &str) -> Result<(), String> {
+    use windows::core::VARIANT;
+
+    use super::office_com::DispatchObject;
+
+    let application = DispatchObject::create_application("PowerPoint.Application")?;
+    let result = (|| {
+        let _ = application.put_i32_property("Visible", 0);
+
+        let presentations = application.get_object_property("Presentations")?;
+        let presentation_variant = presentations.call(
+            "Open",
+            vec![
+                VARIANT::from(absolute_input),
+                VARIANT::from(true),
+                VARIANT::from(false),
+                VARIANT::from(false),
+            ],
+        )?;
+        let presentation = DispatchObject::from_variant(&presentation_variant)?;
+
+        // ExportAsFixedFormat(Path, FixedFormatType=ppFixedFormatTypePDF=2)
+        let export_result = presentation.call_unit(
+            "ExportAsFixedFormat",
+            vec![VARIANT::from(output_text), VARIANT::from(2_i32)],
+        );
+
+        let _ = presentation.call_unit("Close", Vec::new());
+        export_result
+    })();
+
+    let _ = application.call_unit("Quit", Vec::new());
+    result.map_err(|error| format!("PowerPoint 转 PDF 失败：{error}"))
 }

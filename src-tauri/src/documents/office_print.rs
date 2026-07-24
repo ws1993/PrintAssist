@@ -1,12 +1,15 @@
 //! Office COM direct printing that keeps each document's own page orientation.
 //!
-//! Shell `printto` / PDF-viewer handlers often re-layout landscape pages onto
-//! portrait paper. Word/Excel/PowerPoint PrintOut uses the document PageSetup
-//! (or slide size) and therefore preserves landscape/portrait as authored.
+//! Uses in-process IDispatch automation (no PowerShell window). Word/Excel/
+//! PowerPoint PrintOut honors document PageSetup / slide size.
 
 use std::path::Path;
-use std::process::Command;
 
+use windows::core::VARIANT;
+
+use super::office_com::{
+    absolute_path_text, set_active_printer, ComApartment, DispatchObject,
+};
 use super::DocumentKind;
 
 /// Prints an Office document via desktop Office COM automation.
@@ -39,195 +42,164 @@ pub fn print_office_to_printer(
         return Err("Excel/PowerPoint 自定义页码请走 PDF 路径".to_string());
     }
 
-    let script = match kind {
-        DocumentKind::Word => word_print_script(
-            path,
+    let _apartment = ComApartment::enter()?;
+    let absolute_input = absolute_path_text(path)?;
+
+    match kind {
+        DocumentKind::Word => print_word(
+            &absolute_input,
             printer_name,
             copy_count,
             custom_pages,
             page_range_expression,
         ),
-        DocumentKind::Excel => excel_print_script(path, printer_name, copy_count),
-        DocumentKind::PowerPoint => powerpoint_print_script(path, printer_name, copy_count),
-        _ => return Err("不是 Office 文档".to_string()),
-    };
-
-    run_powershell(&script)
+        DocumentKind::Excel => print_excel(&absolute_input, printer_name, copy_count),
+        DocumentKind::PowerPoint => print_powerpoint(&absolute_input, printer_name, copy_count),
+        _ => Err("不是 Office 文档".to_string()),
+    }
 }
 
-fn word_print_script(
-    path: &Path,
+fn print_word(
+    absolute_input: &str,
     printer_name: &str,
     copies: u32,
     custom_pages: bool,
     page_range_expression: &str,
-) -> String {
+) -> Result<(), String> {
     // wdPrintAllDocument = 0, wdPrintRangeOfPages = 4
-    let (range_code, pages_literal) = if custom_pages {
-        (
-            4,
-            format!(
-                "'{}'",
-                escape_for_powershell_literal(page_range_expression.trim())
-            ),
-        )
+    let range_code: i32 = if custom_pages { 4 } else { 0 };
+    let pages_text = if custom_pages {
+        page_range_expression.trim().to_string()
     } else {
-        (0, "''".to_string())
+        String::new()
     };
 
-    format!(
-        r#"
-$ErrorActionPreference = 'Stop'
-$word = New-Object -ComObject Word.Application
-$word.Visible = $false
-$word.DisplayAlerts = 0
-try {{
-  $document = $word.Documents.Open('{input}', $false, $true)
-  try {{
-    # Keep section page orientation from the document; do not force portrait.
-    # FilePrintSetup routes the job to the target printer without changing layout.
-    $null = $word.WordBasic.FilePrintSetup([ref]'{printer}', [ref]$true)
-    $background = $false
-    $append = $false
-    $range = {range}
-    $outputFileName = ''
-    $from = ''
-    $to = ''
-    $item = 0
-    $copies = {copies}
-    $pages = {pages}
-    $pageType = 0
-    $printToFile = $false
-    $collate = $true
-    $document.PrintOut(
-      [ref]$background,
-      [ref]$append,
-      [ref]$range,
-      [ref]$outputFileName,
-      [ref]$from,
-      [ref]$to,
-      [ref]$item,
-      [ref]$copies,
-      [ref]$pages,
-      [ref]$pageType,
-      [ref]$printToFile,
-      [ref]$collate
-    )
-  }} finally {{
-    $document.Close([ref]0)
-  }}
-}} finally {{
-  $word.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
-}}
-"#,
-        input = escape_for_powershell(path),
-        printer = escape_for_powershell_literal(printer_name),
-        range = range_code,
-        copies = copies,
-        pages = pages_literal,
-    )
+    let application = DispatchObject::create_application("Word.Application")?;
+    let result = (|| {
+        let _ = application.put_bool_property("Visible", false);
+        let _ = application.put_i32_property("DisplayAlerts", 0);
+
+        // Prefer ActivePrinter; WordBasic.FilePrintSetup is harder via IDispatch.
+        set_active_printer(&application, printer_name)?;
+
+        let documents = application.get_object_property("Documents")?;
+        // Open(FileName, ConfirmConversions=false, ReadOnly=true)
+        let document_variant = documents.call(
+            "Open",
+            vec![
+                VARIANT::from(absolute_input),
+                VARIANT::from(false),
+                VARIANT::from(true),
+            ],
+        )?;
+        let document = DispatchObject::from_variant(&document_variant)?;
+
+        let print_result = (|| {
+            // PrintOut(Background, Append, Range, OutputFileName, From, To, Item,
+            //          Copies, Pages, PageType, PrintToFile, Collate)
+            document.call_unit(
+                "PrintOut",
+                vec![
+                    VARIANT::from(false),          // Background
+                    VARIANT::from(false),          // Append
+                    VARIANT::from(range_code),     // Range
+                    VARIANT::from(""),             // OutputFileName
+                    VARIANT::from(""),             // From
+                    VARIANT::from(""),             // To
+                    VARIANT::from(0_i32),          // Item
+                    VARIANT::from(copies as i32),  // Copies
+                    VARIANT::from(pages_text.as_str()), // Pages
+                    VARIANT::from(0_i32),          // PageType
+                    VARIANT::from(false),          // PrintToFile
+                    VARIANT::from(true),           // Collate
+                ],
+            )
+        })();
+
+        // wdDoNotSaveChanges = 0
+        let _ = document.call_unit("Close", vec![VARIANT::from(0_i32)]);
+        print_result
+    })();
+
+    let _ = application.call_unit("Quit", vec![VARIANT::from(0_i32)]);
+    result.map_err(|error| format!("Word 直接打印失败：{error}"))
 }
 
-fn excel_print_script(path: &Path, printer_name: &str, copies: u32) -> String {
-    format!(
-        r#"
-$ErrorActionPreference = 'Stop'
-$excel = New-Object -ComObject Excel.Application
-$excel.Visible = $false
-$excel.DisplayAlerts = $false
-try {{
-  $workbook = $excel.Workbooks.Open('{input}', 0, $true)
-  try {{
-    # ActivePrinter format varies by locale/port; try bare name then Ne00 fallbacks.
-    $set = $false
-    foreach ($candidate in @('{printer}', '{printer} on Ne00:', '{printer} on Ne01:')) {{
-      try {{
-        $excel.ActivePrinter = $candidate
-        $set = $true
-        break
-      }} catch {{}}
-    }}
-    if (-not $set) {{
-      throw "无法切换到打印机：{printer}"
-    }}
-    # Workbook/sheet PageSetup.Orientation is honored by PrintOut.
-    $workbook.PrintOut([Type]::Missing, [Type]::Missing, {copies})
-  }} finally {{
-    $workbook.Close($false)
-  }}
-}} finally {{
-  $excel.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
-}}
-"#,
-        input = escape_for_powershell(path),
-        printer = escape_for_powershell_literal(printer_name),
-        copies = copies,
-    )
+fn print_excel(absolute_input: &str, printer_name: &str, copies: u32) -> Result<(), String> {
+    let application = DispatchObject::create_application("Excel.Application")?;
+    let result = (|| {
+        let _ = application.put_bool_property("Visible", false);
+        let _ = application.put_bool_property("DisplayAlerts", false);
+
+        set_active_printer(&application, printer_name)?;
+
+        let workbooks = application.get_object_property("Workbooks")?;
+        // Open(Filename, UpdateLinks=0, ReadOnly=true)
+        let workbook_variant = workbooks.call(
+            "Open",
+            vec![
+                VARIANT::from(absolute_input),
+                VARIANT::from(0_i32),
+                VARIANT::from(true),
+            ],
+        )?;
+        let workbook = DispatchObject::from_variant(&workbook_variant)?;
+
+        let print_result = (|| {
+            // PrintOut(From, To, Copies, ...) — empty optional From/To.
+            workbook.call_unit(
+                "PrintOut",
+                vec![
+                    VARIANT::new(),
+                    VARIANT::new(),
+                    VARIANT::from(copies as i32),
+                ],
+            )
+        })();
+
+        let _ = workbook.call_unit("Close", vec![VARIANT::from(false)]);
+        print_result
+    })();
+
+    let _ = application.call_unit("Quit", Vec::new());
+    result.map_err(|error| format!("Excel 直接打印失败：{error}"))
 }
 
-fn powerpoint_print_script(path: &Path, printer_name: &str, copies: u32) -> String {
-    format!(
-        r#"
-$ErrorActionPreference = 'Stop'
-$powerpoint = New-Object -ComObject PowerPoint.Application
-try {{
-  $presentation = $powerpoint.Presentations.Open('{input}', $true, $false, $false)
-  try {{
-    $presentation.PrintOptions.ActivePrinter = '{printer}'
-    # FitToPage=false keeps slide aspect; OutputType=1 prints slides as authored.
-    $presentation.PrintOptions.FitToPage = $false
-    $presentation.PrintOptions.OutputType = 1
-    $presentation.PrintOptions.NumberOfCopies = {copies}
-    $presentation.PrintOut()
-  }} finally {{
-    $presentation.Close()
-  }}
-}} finally {{
-  $powerpoint.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($powerpoint) | Out-Null
-}}
-"#,
-        input = escape_for_powershell(path),
-        printer = escape_for_powershell_literal(printer_name),
-        copies = copies,
-    )
-}
+fn print_powerpoint(absolute_input: &str, printer_name: &str, copies: u32) -> Result<(), String> {
+    let application = DispatchObject::create_application("PowerPoint.Application")?;
+    let result = (|| {
+        // WithWindow=false keeps UI quiet; Visible is optional / version-dependent.
+        let _ = application.put_i32_property("Visible", 0);
 
-fn run_powershell(script: &str) -> Result<(), String> {
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .output()
-        .map_err(|error| format!("启动 PowerShell 失败：{error}"))?;
+        let presentations = application.get_object_property("Presentations")?;
+        // Open(FileName, ReadOnly=true, Untitled=false, WithWindow=false)
+        let presentation_variant = presentations.call(
+            "Open",
+            vec![
+                VARIANT::from(absolute_input),
+                VARIANT::from(true),
+                VARIANT::from(false),
+                VARIANT::from(false),
+            ],
+        )?;
+        let presentation = DispatchObject::from_variant(&presentation_variant)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if !stderr.trim().is_empty() {
-            stderr
-        } else {
-            stdout
-        };
-        return Err(format!(
-            "Office 直接打印失败，请确认已安装桌面版 Office。详情：{detail}"
-        ));
-    }
-    Ok(())
-}
+        let print_result = (|| {
+            let print_options = presentation.get_object_property("PrintOptions")?;
+            print_options.put_string_property("ActivePrinter", printer_name)?;
+            // FitToPage=false keeps slide aspect; OutputType=1 prints slides as authored.
+            print_options.put_bool_property("FitToPage", false)?;
+            print_options.put_i32_property("OutputType", 1)?;
+            print_options.put_i32_property("NumberOfCopies", copies as i32)?;
+            presentation.call_unit("PrintOut", Vec::new())
+        })();
 
-fn escape_for_powershell(path: &Path) -> String {
-    path.to_string_lossy().replace('\'', "''")
-}
+        let _ = presentation.call_unit("Close", Vec::new());
+        print_result
+    })();
 
-fn escape_for_powershell_literal(value: &str) -> String {
-    value.replace('\'', "''")
+    let _ = application.call_unit("Quit", Vec::new());
+    result.map_err(|error| format!("PowerPoint 直接打印失败：{error}"))
 }
 
 #[cfg(test)]

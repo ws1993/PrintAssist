@@ -1,10 +1,13 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use lopdf::Document;
+use lopdf::{xref::XrefType, Document};
 
 use super::page_range::parse_page_range_expression;
+
+static OUTPUT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Builds a temporary PDF containing only the requested 1-based pages.
 /// Caller owns cleanup of the returned path. Prefer deferred cleanup:
@@ -43,11 +46,20 @@ pub fn extract_pages_to_temp_pdf(
         descending.sort_unstable_by(|left, right| right.cmp(left));
         document.delete_pages(&descending);
         let _ = document.prune_objects();
+        // Gaps after prune confuse some writers; renumber keeps the rewrite compact.
+        document.renumber_objects();
     }
 
+    // Full rewrite must be self-contained. Source PDFs often carry incremental-update
+    // trailer keys (Prev/XRefStm). Keeping them makes startxref point at a valid offset
+    // in *this* file whose content is not an xref — lopdf then reports "Invalid file trailer".
+    prepare_document_for_full_rewrite(&mut document);
+
+    let sequence = OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let output_path = staging_dir()?.join(format!(
-        "printassist-pages-{}-{}.pdf",
+        "printassist-pages-{}-{}-{}.pdf",
         std::process::id(),
+        sequence,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_millis())
@@ -89,10 +101,33 @@ fn staging_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Strip incremental/xref-stream leftovers and force a classic xref table on save.
+fn prepare_document_for_full_rewrite(document: &mut Document) {
+    document.trailer.remove(b"Prev");
+    document.trailer.remove(b"XRefStm");
+    // Keys that only belong on a cross-reference *stream* dictionary.
+    if document
+        .trailer
+        .get(b"Type")
+        .ok()
+        .and_then(|value| value.as_name().ok())
+        .map(|name| name == b"XRef")
+        .unwrap_or(false)
+    {
+        document.trailer.remove(b"Type");
+    }
+    document.trailer.remove(b"W");
+    document.trailer.remove(b"Index");
+    document.trailer.remove(b"Length");
+    document.trailer.remove(b"Filter");
+    document.trailer.remove(b"DecodeParms");
+    document.reference_table.cross_reference_type = XrefType::CrossReferenceTable;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lopdf::{dictionary, Object, Stream};
+    use lopdf::{dictionary, Object, Stream, xref::XrefType};
     use std::fs;
 
     fn write_minimal_pdf(path: &Path, page_count: u32) {
@@ -164,5 +199,112 @@ mod tests {
         let result = extract_pages_to_temp_pdf(&source, "1,9");
         assert!(result.is_err());
         let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn stale_prev_without_rewrite_prep_fails_reload() {
+        let source = std::env::temp_dir().join(format!(
+            "printassist-test-stale-prev-src-{}.pdf",
+            std::process::id()
+        ));
+        let output = std::env::temp_dir().join(format!(
+            "printassist-test-stale-prev-out-{}.pdf",
+            std::process::id()
+        ));
+        write_minimal_pdf(&source, 3);
+
+        let mut document = Document::load(&source).expect("load source");
+        document.delete_pages(&[2]);
+        let mid_offset = (fs::metadata(&source).expect("meta").len() / 2).max(1) as i64;
+        document.trailer.set("Prev", Object::Integer(mid_offset));
+        document.save(&output).expect("save without prep");
+
+        let reload_error = Document::load(&output).expect_err("stale Prev must break reload");
+        let message = reload_error.to_string();
+        assert!(
+            message.contains("trailer") || message.contains("Prev") || message.contains("xref"),
+            "unexpected error: {message}"
+        );
+
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn prepare_full_rewrite_allows_reload_with_stale_prev() {
+        let source = std::env::temp_dir().join(format!(
+            "printassist-test-prep-src-{}.pdf",
+            std::process::id()
+        ));
+        let output = std::env::temp_dir().join(format!(
+            "printassist-test-prep-out-{}.pdf",
+            std::process::id()
+        ));
+        write_minimal_pdf(&source, 3);
+
+        let mut document = Document::load(&source).expect("load source");
+        document.delete_pages(&[2]);
+        let mid_offset = (fs::metadata(&source).expect("meta").len() / 2).max(1) as i64;
+        document.trailer.set("Prev", Object::Integer(mid_offset));
+        document.trailer.set("XRefStm", Object::Integer(mid_offset));
+        document.reference_table.cross_reference_type = XrefType::CrossReferenceStream;
+        prepare_document_for_full_rewrite(&mut document);
+        document.save(&output).expect("save with prep");
+
+        let reloaded = Document::load(&output).expect("reload after prep");
+        assert_eq!(reloaded.get_pages().len(), 2);
+
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_file(output);
+    }
+
+    /// Real-world PDFs often use cross-reference streams and may carry
+    /// incremental-update trailer keys (Prev/XRefStm). Rewrite after
+    /// delete_pages must still produce a reloadable file.
+    #[test]
+    fn extracts_pages_from_cross_reference_stream_pdf() {
+        let source = std::env::temp_dir().join(format!(
+            "printassist-test-xref-stream-{}.pdf",
+            std::process::id()
+        ));
+        {
+            let mut document = Document::with_version("1.5");
+            document.reference_table.cross_reference_type = XrefType::CrossReferenceStream;
+            let pages_id = document.new_object_id();
+            let mut kids = Vec::new();
+            for page_index in 1..=4 {
+                let content = format!("BT /F1 12 Tf 72 720 Td (P{page_index}) Tj ET");
+                let content_id =
+                    document.add_object(Stream::new(dictionary! {}, content.into_bytes()));
+                let page_id = document.add_object(dictionary! {
+                    "Type" => "Page",
+                    "Parent" => pages_id,
+                    "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                    "Contents" => content_id,
+                });
+                kids.push(page_id.into());
+            }
+            document.objects.insert(
+                pages_id,
+                Object::Dictionary(dictionary! {
+                    "Type" => "Pages",
+                    "Count" => kids.len() as i64,
+                    "Kids" => kids,
+                }),
+            );
+            let catalog_id = document.add_object(dictionary! {
+                "Type" => "Catalog",
+                "Pages" => pages_id,
+            });
+            document.trailer.set("Root", catalog_id);
+            document.save(&source).expect("save xref-stream source");
+        }
+
+        let extracted = extract_pages_to_temp_pdf(&source, "1-2").expect("extract pages");
+        let document = Document::load(&extracted).expect("load extracted");
+        assert_eq!(document.get_pages().len(), 2);
+
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_file(extracted);
     }
 }
