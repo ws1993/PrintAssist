@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
@@ -11,6 +11,76 @@ use crate::printing::run_print_batch_sync;
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/ws1993/PrintAssist/releases/latest";
 const GITHUB_RELEASES_PAGE: &str = "https://github.com/ws1993/PrintAssist/releases/latest";
+
+/// Launch the downloaded NSIS installer so it survives app exit.
+///
+/// On Windows the installer must:
+/// 1. start after PrintAssist.exe unlocks (short delay),
+/// 2. run outside the Tauri/WebView2 process tree so `app.exit` does not kill it.
+fn launch_nsis_installer(installer_path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        // CREATE_NO_WINDOW: hide the helper console
+        // CREATE_NEW_PROCESS_GROUP / CREATE_BREAKAWAY_FROM_JOB: keep installer alive after exit
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
+
+        if !installer_path.is_file() {
+            return Err(format!("安装包不存在：{}", installer_path.display()));
+        }
+
+        let file_size = std::fs::metadata(installer_path)
+            .map_err(|error| format!("读取安装包失败：{error}"))?
+            .len();
+        if file_size < 1024 {
+            return Err("安装包文件过小，下载可能不完整".to_string());
+        }
+
+        // Quote-safe path for the delayed cmd script.
+        let installer = installer_path
+            .to_string_lossy()
+            .replace('"', "")
+            .to_string();
+
+        // ping ~3s delay so the app can exit and unlock the installed executable.
+        // `start ""` detaches NSIS from the helper cmd process.
+        let delayed_command =
+            format!("ping 127.0.0.1 -n 4 >nul & start \"\" \"{installer}\" /S");
+
+        let creation_flag_candidates = [
+            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+            CREATE_NO_WINDOW,
+        ];
+
+        let mut last_error_message = String::from("未知错误");
+        for creation_flags in creation_flag_candidates {
+            match Command::new("cmd.exe")
+                .args(["/C", &delayed_command])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(creation_flags)
+                .spawn()
+            {
+                Ok(_) => return Ok(()),
+                Err(error) => last_error_message = error.to_string(),
+            }
+        }
+
+        Err(format!("启动安装程序失败：{last_error_message}"))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = installer_path;
+        Err("当前平台不支持应用内安装".to_string())
+    }
+}
 
 #[tauri::command]
 pub async fn list_system_printers() -> Result<Vec<SystemPrinter>, String> {
@@ -267,17 +337,17 @@ pub async fn download_and_install_update(
         "path": file_path.to_string_lossy().to_string(),
     }));
 
-    // Execute the installer silently
-    let installer_path = file_path.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new(&installer_path)
-            .arg("/S") // Silent install for NSIS
-            .spawn()
-            .ok();
-    });
+    if total_size > 0 && downloaded < total_size {
+        return Err(format!(
+            "下载不完整：已下载 {downloaded} / {total_size} 字节"
+        ));
+    }
 
-    // Give the installer a moment to start, then exit the app
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    // Must succeed before exiting; otherwise the app would close with no installer.
+    launch_nsis_installer(&file_path)?;
+
+    // Helper cmd is already running with a delay; exit so files unlock for NSIS.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     app.exit(0);
 
     Ok(file_path.to_string_lossy().to_string())
