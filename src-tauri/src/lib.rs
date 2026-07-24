@@ -28,6 +28,16 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                let window = app.get_webview_window("main").unwrap();
+                window.set_icon(
+                    tauri::image::Image::from_bytes(include_bytes!("../icons/icon.ico"))
+                        .expect("Failed to load icon"),
+                )?;
+            }
+
             let launch_paths = collect_launch_paths(&std::env::args().collect::<Vec<_>>());
             if !launch_paths.is_empty() {
                 let handle = app.handle().clone();

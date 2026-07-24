@@ -21,6 +21,7 @@ import {
   subscribeIncomingFiles,
   subscribeNativeDragDrop,
 } from './api/nativeBridge';
+import { AppLogo } from './components/AppLogo';
 import {
   createDefaultGlobalSettings,
   evaluateSettingAvailability,
@@ -372,8 +373,56 @@ export function App() {
         token: {
           colorPrimary: '#1557d0',
           colorText: '#172033',
-          borderRadius: 3,
+          colorBorder: '#d7e0ec',
+          colorBorderSecondary: '#e8eef5',
+          colorBgContainer: '#ffffff',
+          colorBgLayout: '#f4f7fb',
+          borderRadius: 10,
+          borderRadiusLG: 14,
+          borderRadiusSM: 8,
+          borderRadiusXS: 6,
+          controlHeight: 34,
           fontFamily: '"Segoe UI Variable", "Microsoft YaHei UI", sans-serif',
+          boxShadow: '0 4px 16px rgba(23, 32, 51, 0.06)',
+          boxShadowSecondary: '0 8px 24px rgba(23, 32, 51, 0.08)',
+          motionDurationMid: '0.2s',
+          motionDurationSlow: '0.28s',
+        },
+        components: {
+          Button: {
+            borderRadius: 10,
+            controlHeight: 34,
+            paddingInline: 14,
+          },
+          Input: {
+            borderRadius: 10,
+          },
+          Select: {
+            borderRadius: 10,
+          },
+          Segmented: {
+            borderRadius: 10,
+            borderRadiusSM: 8,
+          },
+          Card: {
+            borderRadiusLG: 14,
+          },
+          Modal: {
+            borderRadiusLG: 16,
+          },
+          Drawer: {
+            borderRadiusLG: 16,
+          },
+          Tag: {
+            borderRadiusSM: 999,
+          },
+          Alert: {
+            borderRadiusLG: 12,
+          },
+          Table: {
+            borderRadius: 12,
+            headerBorderRadius: 12,
+          },
         },
       }}
     >
@@ -381,7 +430,7 @@ export function App() {
         <Header className="app-header">
           <div className="brand-group">
             <div className="brand-mark">
-              <Printer size={18} />
+              <AppLogo size={30} />
             </div>
             <div className="brand-copy">
               <Typography.Title level={4}>打印助手</Typography.Title>

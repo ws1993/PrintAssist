@@ -1,5 +1,6 @@
 import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [pluginReact()],
@@ -10,6 +11,7 @@ export default defineConfig({
   },
   html: {
     title: '打印助手',
+    favicon: path.resolve(__dirname, 'src-tauri/icons/32x32.png'),
   },
   output: {
     distPath: {
