@@ -106,6 +106,18 @@ pub struct UpdateCheckResult {
     pub body: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyConfig {
+    pub use_system_proxy: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_proxy_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

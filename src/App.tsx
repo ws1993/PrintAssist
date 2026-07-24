@@ -36,6 +36,12 @@ import { createPrintSummary, queueReducer } from './features/queue/queueReducer'
 import { PrintSummary } from './features/results/PrintSummary';
 import { FileSettingsDrawer } from './features/settings/FileSettingsDrawer';
 import { GlobalSettingsPanel } from './features/settings/GlobalSettingsPanel';
+import { ProxySettingsPanel } from './features/settings/ProxySettingsPanel';
+import {
+  createDefaultProxySettings,
+  getProxyConfig,
+  type ProxySettings,
+} from './domain/proxySettings';
 import type { SystemPrinter } from './shared/contracts/printer';
 import type { PrintQueueItemPayload } from './shared/contracts/printJob';
 
@@ -49,8 +55,24 @@ export function App() {
     createDefaultGlobalSettings(),
   );
   const [settingsItemId, setSettingsItemId] = useState<string | null>(null);
+  const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [allowAssociationFallback, setAllowAssociationFallback] = useState(false);
+  const [proxySettings, setProxySettings] = useState<ProxySettings>(() => {
+    try {
+      const saved = localStorage.getItem('proxySettings');
+      if (saved) {
+        return JSON.parse(saved) as ProxySettings;
+      }
+    } catch {
+      // ignore
+    }
+    return createDefaultProxySettings();
+  });
+
+  useEffect(() => {
+    localStorage.setItem('proxySettings', JSON.stringify(proxySettings));
+  }, [proxySettings]);
 
   const selectedPrinter = useMemo(
     () => printers.find((printer) => printer.name === globalSettings.printerName),
@@ -291,7 +313,13 @@ export function App() {
 
   const handleCheckUpdate = async () => {
     try {
-      const updateInfo = await checkForAppUpdate();
+      const proxyConfig = getProxyConfig(proxySettings);
+      const updateInfo = await checkForAppUpdate({
+        useSystemProxy: proxyConfig.useSystemProxy,
+        customProxyUrl: proxyConfig.customProxyUrl,
+        username: proxyConfig.username,
+        password: proxyConfig.password,
+      });
       if (!updateInfo.available) {
         message.success('当前已是最新版本');
         return;
@@ -336,6 +364,9 @@ export function App() {
             </div>
           </div>
           <Space className="header-actions" size={10}>
+            <Button ghost onClick={() => setProxyModalOpen(true)}>
+              代理设置
+            </Button>
             <Button ghost icon={<RefreshCw size={14} />} onClick={() => void refreshPrinters()}>
               刷新打印机
             </Button>
@@ -445,6 +476,20 @@ export function App() {
           message.success('已保存单文件设置');
         }}
       />
+      <Modal
+        title="代理设置"
+        open={proxyModalOpen}
+        onCancel={() => setProxyModalOpen(false)}
+        footer={
+          <Button type="primary" onClick={() => setProxyModalOpen(false)}>
+            确定
+          </Button>
+        }
+        width={420}
+        destroyOnClose
+      >
+        <ProxySettingsPanel settings={proxySettings} onChange={setProxySettings} />
+      </Modal>
     </ConfigProvider>
   );
 }

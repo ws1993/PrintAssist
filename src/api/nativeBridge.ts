@@ -45,7 +45,16 @@ export async function runPrintBatch(request: PrintBatchRequest): Promise<PrintBa
   return invokeCommand<PrintBatchResult>('run_print_batch', { request });
 }
 
-export async function checkForAppUpdate(): Promise<{
+export interface ProxyConfigPayload {
+  useSystemProxy: boolean;
+  customProxyUrl?: string;
+  username?: string;
+  password?: string;
+}
+
+export async function checkForAppUpdate(
+  proxy?: ProxyConfigPayload,
+): Promise<{
   available: boolean;
   version?: string;
   body?: string;
@@ -53,7 +62,7 @@ export async function checkForAppUpdate(): Promise<{
   if (!isTauriRuntime()) {
     return { available: false };
   }
-  return invokeCommand('check_for_app_update');
+  return invokeCommand('check_for_app_update', { proxy: proxy ?? null });
 }
 
 export async function installAppUpdate(): Promise<void> {

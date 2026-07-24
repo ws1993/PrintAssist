@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::contracts::{PrintBatchRequest, PrintBatchResult, SystemPrinter, UpdateCheckResult};
+use crate::contracts::{PrintBatchRequest, PrintBatchResult, ProxyConfig, SystemPrinter, UpdateCheckResult};
 use crate::ingress::{collect_path_argument, is_supported_file};
 use crate::printers;
 use crate::printing::run_print_batch_sync;
@@ -72,9 +72,33 @@ pub async fn run_print_batch(request: PrintBatchRequest) -> Result<PrintBatchRes
 }
 
 #[tauri::command]
-pub async fn check_for_app_update() -> Result<UpdateCheckResult, String> {
-    let client = reqwest::Client::builder()
-        .user_agent("PrintAssist-Updater")
+pub async fn check_for_app_update(
+    proxy: Option<ProxyConfig>,
+) -> Result<UpdateCheckResult, String> {
+    let mut client_builder = reqwest::Client::builder()
+        .user_agent("PrintAssist-Updater");
+
+    if let Some(ref proxy_config) = proxy {
+        if !proxy_config.use_system_proxy {
+            if let Some(ref custom_url) = proxy_config.custom_proxy_url {
+                let mut proxy = reqwest::Proxy::all(custom_url)
+                    .map_err(|error| format!("创建自定义代理失败：{error}"))?;
+                match (&proxy_config.username, &proxy_config.password) {
+                    (Some(user), Some(pass)) => {
+                        proxy = proxy.basic_auth(user.as_str(), pass.as_str());
+                    }
+                    _ => {}
+                }
+                client_builder = client_builder.proxy(proxy);
+            } else {
+                // 无代理模式：不使用任何代理
+                client_builder = client_builder.no_proxy();
+            }
+        }
+        // use_system_proxy = true 时，reqwest 默认使用系统代理，无需额外配置
+    }
+
+    let client = client_builder
         .build()
         .map_err(|error| format!("创建 HTTP 客户端失败：{error}"))?;
 
