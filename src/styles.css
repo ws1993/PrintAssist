@@ -1241,6 +1241,19 @@ body {
   font-weight: 600;
 }
 
+.quick-chip.locked {
+  background: #f8fafc;
+  border-style: dashed;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.quick-chip.locked:hover {
+  border-color: var(--border-light);
+  color: #94a3b8;
+  transform: none;
+}
+
 .scope-note {
   font-size: 10px;
   color: var(--text-muted);

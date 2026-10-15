@@ -30,7 +30,7 @@ import type {
   PrintSettings,
   SidesMode,
 } from '../../domain/printSettings';
-import { mergePrintSettings } from '../../domain/printSettings';
+import { mergePrintSettings, resolveDuplexAvailability } from '../../domain/printSettings';
 import { parsePageRangeExpression } from '../../domain/pageRange';
 
 interface FileSettingsDrawerProps {
@@ -84,6 +84,12 @@ export function FileSettingsDrawer({
   const isPageCountKnown = Boolean(item?.pageCount && item.pageCount > 0);
   const actualPages = isPageCountKnown ? item!.pageCount! : 1;
 
+  // 双面可用性 = 打印机能力 且 文件类型能真正下发双面（文本文件走关联程序，不能）
+  const duplexAvailability = resolveDuplexAvailability({
+    printerDuplexEnabled: duplexEnabled,
+    kind: item?.kind,
+  });
+
   useEffect(() => {
     if (!item) return;
 
@@ -95,7 +101,7 @@ export function FileSettingsDrawer({
     setUseCustomCopies(item.override.copies !== undefined);
     setUseCustomPages(item.override.pageRange !== undefined);
     setColorMode(merged.colorMode);
-    setSidesMode(merged.sidesMode);
+    setSidesMode(duplexAvailability.enabled ? merged.sidesMode : 'simplex');
     setFlipMode(merged.flipMode);
     setCopies(merged.copies);
 
@@ -112,7 +118,7 @@ export function FileSettingsDrawer({
       }
       setRangeQuickMode('all');
     }
-  }, [item, globalSettings]);
+  }, [item, globalSettings, duplexAvailability.enabled]);
 
   const selectedPagesList = useMemo<number[]>(() => {
     if (!isPageCountKnown) {
@@ -349,10 +355,18 @@ export function FileSettingsDrawer({
           onChange={(e) => setSidesMode(e.target.value)}
         >
           <Radio value="simplex">单面打印</Radio>
-          <Radio value="duplex" disabled={!duplexEnabled}>
-            双面打印 {!duplexEnabled && '(打印机不支持)'}
+          <Radio value="duplex" disabled={!duplexAvailability.enabled}>
+            双面打印{' '}
+            {!duplexAvailability.enabled && `（${duplexAvailability.reason ?? '不可用'}）`}
           </Radio>
         </Radio.Group>
+        {!duplexAvailability.enabled && (
+          <div style={{ marginTop: 6 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              该文件将按单面打印，界面与纸张统计均按单面计算。
+            </Typography.Text>
+          </div>
+        )}
 
         {sidesMode === 'duplex' && (
           <div style={{ marginTop: 8, paddingLeft: 12 }}>

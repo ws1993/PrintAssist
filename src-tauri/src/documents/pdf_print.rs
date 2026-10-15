@@ -38,6 +38,7 @@ pub fn print_pdf_to_printer(
     file_path: &Path,
     printer_name: &str,
     copies: u32,
+    sides: crate::documents::PrintSides,
 ) -> Result<(), String> {
     if !file_path.exists() {
         return Err(format!("文件不存在：{}", file_path.display()));
@@ -52,7 +53,7 @@ pub fn print_pdf_to_printer(
     if pages.is_empty() {
         return Err("PDF 渲染后没有页面".to_string());
     }
-    print_decoded_pages(&pages, printer_name, copies)
+    print_decoded_pages(&pages, printer_name, copies, sides)
 }
 
 /// Render each PDF page in-process to a print-quality BGRA bitmap.
@@ -212,7 +213,6 @@ fn render_single_page(
 
 #[cfg(test)]
 fn destination_pixels_for_page(width_dip: f32, height_dip: f32, target_dpi: u32) -> (u32, u32) {
-
     destination_pixels_for_page_size(
         Size {
             Width: width_dip,
@@ -306,6 +306,7 @@ mod tests {
             Path::new("C:\\\\this-file-should-not-exist-printassist.pdf"),
             "Microsoft Print to PDF",
             1,
+            crate::documents::PrintSides::Simplex,
         );
         assert!(result.is_err());
     }

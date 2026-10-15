@@ -55,6 +55,52 @@ export function hasFileOverride(fileOverride: FileSettingsOverride): boolean {
   return Object.keys(fileOverride).length > 0;
 }
 
+/**
+ * 文件类型是否能让双面真正下发到打印机。
+ *
+ * 文本文件走系统关联程序（`printto`）打印，DEVMODE 由关联程序持有，应用无法强制双面；
+ * 未识别类型本就无法打印，同样按不支持处理。未提供 kind 时按可双面处理，
+ * 与既有行为保持一致。
+ */
+export function supportsDuplexForKind(kind?: string): boolean {
+  return kind !== 'text' && kind !== 'unknown';
+}
+
+export interface DuplexAvailability {
+  enabled: boolean;
+  reason?: string;
+}
+
+/**
+ * 双面可用性 = 打印机能力 且 文件类型可下发。
+ * 用于让界面按实际情况展示，而不是显示一个不会生效的“双面”。
+ */
+export function resolveDuplexAvailability(options: {
+  printerDuplexEnabled: boolean;
+  kind?: string;
+}): DuplexAvailability {
+  if (!options.printerDuplexEnabled) {
+    return { enabled: false, reason: '当前打印机不支持双面' };
+  }
+  if (!supportsDuplexForKind(options.kind)) {
+    return {
+      enabled: false,
+      reason: '文本文件由系统关联程序打印，无法强制双面，将按单面输出',
+    };
+  }
+  return { enabled: true };
+}
+
+/**
+ * 实际会送达打印机的单双面模式：能力不可用时一律按单面计。
+ */
+export function effectiveSidesMode(
+  sidesMode: SidesMode,
+  duplex: DuplexAvailability,
+): SidesMode {
+  return duplex.enabled ? sidesMode : 'simplex';
+}
+
 export interface SettingAvailability {
   colorEnabled: boolean;
   duplexEnabled: boolean;
@@ -151,6 +197,7 @@ export function calculateBatchMetrics(
     kind?: string;
   }>,
   globalSettings: PrintSettings,
+  printerDuplexEnabled = true,
 ): BatchMetrics {
   let totalPages = 0;
   let totalSheets = 0;
@@ -178,8 +225,14 @@ export function calculateBatchMetrics(
 
     const copies = merged.copies > 0 ? merged.copies : 1;
     const pagesForThisItem = itemPages * copies;
+    const duplex = resolveDuplexAvailability({
+      printerDuplexEnabled,
+      kind: item.kind,
+    });
     const sheetsPerCopy =
-      merged.sidesMode === 'duplex' ? Math.ceil(itemPages / 2) : itemPages;
+      effectiveSidesMode(merged.sidesMode, duplex) === 'duplex'
+        ? Math.ceil(itemPages / 2)
+        : itemPages;
     const sheetsForThisItem = sheetsPerCopy * copies;
 
     totalPages += pagesForThisItem;

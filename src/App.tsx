@@ -31,8 +31,10 @@ import {
 
 import {
   createDefaultGlobalSettings,
+  effectiveSidesMode,
   evaluateSettingAvailability,
   mergePrintSettings,
+  resolveDuplexAvailability,
   sanitizeSettingsForPrinter,
   type PrintSettings,
 } from './domain/printSettings';
@@ -240,6 +242,12 @@ export function App() {
     const payloads: PrintQueueItemPayload[] = [];
     for (const item of sourceItems) {
       const resolved = mergePrintSettings(globalSettings, item.override);
+      // 只下发真实可达成的能力：打印机不支持双面，或文件类型（文本）无法强制双面时，按单面提交。
+      const duplexAvailability = resolveDuplexAvailability({
+        printerDuplexEnabled: availability.duplexEnabled,
+        kind: item.kind,
+      });
+      const effectiveSides = effectiveSidesMode(resolved.sidesMode, duplexAvailability);
       if (resolved.pageRange.mode === 'custom') {
         const parseResult = parsePageRangeExpression(
           resolved.pageRange.expression,
@@ -258,7 +266,7 @@ export function App() {
         settings: {
           printerName: resolved.printerName,
           colorMode: resolved.colorMode,
-          sidesMode: resolved.sidesMode,
+          sidesMode: effectiveSides,
           flipMode: resolved.flipMode,
           copies: resolved.copies,
           pageRangeMode: resolved.pageRange.mode,

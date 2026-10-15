@@ -7,7 +7,7 @@
 use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
 
-use windows::core::{Interface, BSTR, GUID, IUnknown, PCWSTR, VARIANT};
+use windows::core::{IUnknown, Interface, BSTR, GUID, PCWSTR, VARIANT};
 use windows::Win32::System::Com::{
     CLSIDFromProgID, CoCreateInstance, CoInitializeEx, CoUninitialize, IDispatch,
     CLSCTX_LOCAL_SERVER, COINIT_APARTMENTTHREADED, DISPATCH_FLAGS, DISPATCH_METHOD,
@@ -55,12 +55,11 @@ pub struct DispatchObject {
 impl DispatchObject {
     pub fn create_application(prog_id: &str) -> Result<Self, String> {
         let prog_id_wide = windows::core::HSTRING::from(prog_id);
-        let class_id = unsafe { CLSIDFromProgID(&prog_id_wide) }.map_err(|error| {
-            format!("找不到 {prog_id}（请确认已安装桌面版 Office）：{error}")
-        })?;
+        let class_id = unsafe { CLSIDFromProgID(&prog_id_wide) }
+            .map_err(|error| format!("找不到 {prog_id}（请确认已安装桌面版 Office）：{error}"))?;
 
-        let dispatch: IDispatch =
-            unsafe { CoCreateInstance(&class_id, None, CLSCTX_LOCAL_SERVER) }.map_err(|error| {
+        let dispatch: IDispatch = unsafe { CoCreateInstance(&class_id, None, CLSCTX_LOCAL_SERVER) }
+            .map_err(|error| {
                 format!("创建 {prog_id} 失败（请确认已安装桌面版 Office）：{error}")
             })?;
 
@@ -179,10 +178,8 @@ fn resolve_dispid(dispatch: &IDispatch, name: &str) -> Result<i32, String> {
     let mut wide_name: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
     let name_pointer = PCWSTR(wide_name.as_mut_ptr());
     let mut dispid = 0_i32;
-    unsafe {
-        dispatch.GetIDsOfNames(&GUID::zeroed(), &name_pointer, 1, 0, &mut dispid)
-    }
-    .map_err(|error| format!("找不到成员 {name}：{error}"))?;
+    unsafe { dispatch.GetIDsOfNames(&GUID::zeroed(), &name_pointer, 1, 0, &mut dispid) }
+        .map_err(|error| format!("找不到成员 {name}：{error}"))?;
     Ok(dispid)
 }
 

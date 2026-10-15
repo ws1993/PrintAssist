@@ -20,10 +20,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { QueueItem } from '../../domain/queueTypes';
 import { describePageRange } from '../../domain/pageRange';
+import { message } from 'antd';
 import {
   calculateBatchMetrics,
+  effectiveSidesMode,
   hasFileOverride,
   mergePrintSettings,
+  resolveDuplexAvailability,
+  supportsDuplexForKind,
   type FileSettingsOverride,
   type PrintSettings,
 } from '../../domain/printSettings';
@@ -138,8 +142,8 @@ export function PrintQueue({
   }, [selectedIds, items]);
 
   const metrics = useMemo(
-    () => calculateBatchMetrics(items, globalSettings),
-    [items, globalSettings],
+    () => calculateBatchMetrics(items, globalSettings, duplexEnabled),
+    [items, globalSettings, duplexEnabled],
   );
 
   const isAllSelected = items.length > 0 && validSelectedIds.size === items.length;
@@ -154,6 +158,16 @@ export function PrintQueue({
   }, [validSelectedIds, items]);
 
   const targetLabel = validSelectedIds.size > 0 ? `已选 ${validSelectedIds.size} 项` : `全部 ${items.length} 项`;
+
+  // 批量双面只对“真正能下发双面”的文件生效，避免把无效承诺写进任务
+  const duplexTargetIds = useMemo(
+    () =>
+      targetIds.filter((id) => {
+        const item = items.find((candidate) => candidate.id === id);
+        return supportsDuplexForKind(item?.kind);
+      }),
+    [targetIds, items],
+  );
 
   // Close floating batch menu on outside click or escape
   useEffect(() => {
@@ -212,6 +226,14 @@ export function PrintQueue({
 
   const handleQuickToggleSides = (item: QueueItem) => {
     if (isPrinting) return;
+    const duplex = resolveDuplexAvailability({
+      printerDuplexEnabled: duplexEnabled,
+      kind: item.kind,
+    });
+    if (!duplex.enabled) {
+      message.info(duplex.reason ?? '当前无法使用双面打印');
+      return;
+    }
     const resolved = mergePrintSettings(globalSettings, item.override);
     const nextSides = resolved.sidesMode === 'duplex' ? 'simplex' : 'duplex';
     onUpdateOverride(item.id, {
@@ -303,9 +325,9 @@ export function PrintQueue({
                     <button
                       type="button"
                       className="btn-batch-pop"
-                      disabled={!duplexEnabled}
+                      disabled={!duplexEnabled || duplexTargetIds.length === 0}
                       onClick={() => {
-                        onBatchUpdateOverride(targetIds, {
+                        onBatchUpdateOverride(duplexTargetIds, {
                           sidesMode: 'duplex',
                           flipMode: 'longEdge',
                         });
@@ -316,9 +338,9 @@ export function PrintQueue({
                     <button
                       type="button"
                       className="btn-batch-pop"
-                      disabled={!duplexEnabled}
+                      disabled={!duplexEnabled || duplexTargetIds.length === 0}
                       onClick={() => {
-                        onBatchUpdateOverride(targetIds, {
+                        onBatchUpdateOverride(duplexTargetIds, {
                           sidesMode: 'duplex',
                           flipMode: 'shortEdge',
                         });
@@ -490,6 +512,11 @@ export function PrintQueue({
                 const isRangeOverridden = item.override.pageRange !== undefined;
                 const isCopiesOverridden = item.override.copies !== undefined;
                 const kindInfo = getKindInfo(item.kind);
+                const itemDuplex = resolveDuplexAvailability({
+                  printerDuplexEnabled: duplexEnabled,
+                  kind: item.kind,
+                });
+                const effectiveSides = effectiveSidesMode(resolved.sidesMode, itemDuplex);
 
                 return (
                   <div
@@ -540,13 +567,21 @@ export function PrintQueue({
                           {resolved.colorMode === 'color' ? '🎨 彩色' : '⚫ 黑白'}
                         </span>
                         <span
-                          className={`quick-chip ${isSidesOverridden ? 'active-override' : ''}`}
+                          className={`quick-chip ${isSidesOverridden ? 'active-override' : ''} ${
+                            itemDuplex.enabled ? '' : 'locked'
+                          }`}
                           onClick={() => handleQuickToggleSides(item)}
-                          title="点击快速切换单双面"
+                          title={
+                            itemDuplex.enabled
+                              ? '点击快速切换单双面'
+                              : `${itemDuplex.reason}；已按实际能力显示为单面`
+                          }
                         >
-                          {resolved.sidesMode === 'duplex'
+                          {effectiveSides === 'duplex'
                             ? `📄 双面(${resolved.flipMode === 'shortEdge' ? '短边' : '长边'})`
-                            : '📃 单面'}
+                            : itemDuplex.enabled
+                              ? '📃 单面'
+                              : '📃 单面（类型限制）'}
                         </span>
                         {isCopiesOverridden && (
                           <span

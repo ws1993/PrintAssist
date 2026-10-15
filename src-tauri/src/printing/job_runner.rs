@@ -10,7 +10,7 @@ use crate::documents::office::convert_office_to_pdf;
 use crate::documents::pdf_pages::extract_pages_to_temp_pdf;
 #[cfg(windows)]
 use crate::documents::print_shell::print_file_to_printer;
-use crate::documents::{detect_document_kind, DocumentKind};
+use crate::documents::{detect_document_kind, DocumentKind, PrintSides};
 use crate::printers;
 
 /// Shell `printto` / staged PDF handlers may open files asynchronously.
@@ -99,6 +99,20 @@ fn print_single_item(item: PrintQueueItemPayload) -> PrintBatchResultItem {
     }
 }
 
+/// Map UI sides/flip settings onto the DEVMODE duplex intent.
+/// 双面长边 → long-edge flip (DMDUP_VERTICAL)，双面短边 → short-edge flip.
+fn resolve_print_sides(sides_mode: &str, flip_mode: &str) -> PrintSides {
+    if sides_mode == "duplex" {
+        if flip_mode == "shortEdge" {
+            PrintSides::DuplexShortEdge
+        } else {
+            PrintSides::DuplexLongEdge
+        }
+    } else {
+        PrintSides::Simplex
+    }
+}
+
 #[cfg(windows)]
 fn print_item_windows(
     item: &PrintQueueItemPayload,
@@ -109,10 +123,11 @@ fn print_item_windows(
 ) -> Result<(), String> {
     let printer = item.settings.printer_name.as_str();
     let copies = item.settings.copies.max(1);
+    let sides = resolve_print_sides(&item.settings.sides_mode, &item.settings.flip_mode);
 
     match kind {
         DocumentKind::Image => {
-            crate::documents::image_print::print_image_to_printer(path, printer, copies)
+            crate::documents::image_print::print_image_to_printer(path, printer, copies, sides)
         }
 
         DocumentKind::Pdf => {
@@ -123,10 +138,23 @@ fn print_item_windows(
             } else {
                 path.to_path_buf()
             };
-            print_pdf_preserving_orientation(&pdf_path, printer, copies)
+            print_pdf_preserving_orientation(&pdf_path, printer, copies, sides)
         }
 
         DocumentKind::Word => {
+            // COM PrintOut cannot request duplex; duplex jobs must go through
+            // the PDF path where the DEVMODE dmDuplex field is applied.
+            if sides != PrintSides::Simplex {
+                return fallback_office_via_pdf(
+                    item,
+                    path,
+                    kind,
+                    custom_range,
+                    temporary_paths,
+                    sides,
+                    "Word 双面打印需要 PDF 路径",
+                );
+            }
             // Word COM PrintOut honors section PageSetup orientation.
             match crate::documents::office_print::print_office_to_printer(
                 path,
@@ -145,6 +173,7 @@ fn print_item_windows(
                         kind,
                         custom_range,
                         temporary_paths,
+                        sides,
                         &office_error,
                     )
                 }
@@ -152,15 +181,21 @@ fn print_item_windows(
         }
 
         DocumentKind::Excel | DocumentKind::PowerPoint => {
-            if custom_range {
-                // Custom ranges for Excel/PPT: PDF extract path is more reliable.
+            if custom_range || sides != PrintSides::Simplex {
+                // Custom ranges and duplex both require the PDF path.
+                let reason = if custom_range {
+                    "自定义页码"
+                } else {
+                    "Excel/PPT 双面打印需要 PDF 路径"
+                };
                 return fallback_office_via_pdf(
                     item,
                     path,
                     kind,
-                    true,
+                    custom_range,
                     temporary_paths,
-                    "自定义页码",
+                    sides,
+                    reason,
                 );
             }
 
@@ -168,14 +203,21 @@ fn print_item_windows(
                 path, kind, printer, copies, "all", "",
             ) {
                 Ok(()) => Ok(()),
-                Err(office_error) => {
-                    fallback_office_via_pdf(item, path, kind, false, temporary_paths, &office_error)
-                }
+                Err(office_error) => fallback_office_via_pdf(
+                    item,
+                    path,
+                    kind,
+                    false,
+                    temporary_paths,
+                    sides,
+                    &office_error,
+                ),
             }
         }
 
         DocumentKind::Text => {
-            // Text still uses association printto; orientation is rarely meaningful.
+            // Text still uses association printto; the DEVMODE is owned by the
+            // association handler, so duplex cannot be enforced here.
             print_file_to_printer(path, printer, copies)
         }
 
@@ -191,8 +233,9 @@ fn print_pdf_preserving_orientation(
     pdf_path: &Path,
     printer: &str,
     copies: u32,
+    sides: PrintSides,
 ) -> Result<(), String> {
-    crate::documents::pdf_print::print_pdf_to_printer(pdf_path, printer, copies)
+    crate::documents::pdf_print::print_pdf_to_printer(pdf_path, printer, copies, sides)
 }
 
 #[cfg(windows)]
@@ -202,6 +245,7 @@ fn fallback_office_via_pdf(
     kind: DocumentKind,
     custom_range: bool,
     temporary_paths: &mut Vec<PathBuf>,
+    sides: PrintSides,
     prior_error: &str,
 ) -> Result<(), String> {
     let printer = item.settings.printer_name.as_str();
@@ -213,6 +257,13 @@ fn fallback_office_via_pdf(
             pdf
         }
         Err(convert_error) => {
+            if sides != PrintSides::Simplex {
+                // Duplex cannot be honored through association handlers;
+                // fail loudly instead of silently printing single-sided.
+                return Err(format!(
+                    "{prior_error}；Office 转 PDF 失败：{convert_error}；双面打印无法使用关联程序回退"
+                ));
+            }
             if !item.allow_association_fallback {
                 return Err(format!(
                     "{prior_error}；Office 转 PDF 也失败：{convert_error}"
@@ -244,7 +295,7 @@ fn fallback_office_via_pdf(
         pdf_path
     };
 
-    print_pdf_preserving_orientation(&pdf_path, printer, copies)
+    print_pdf_preserving_orientation(&pdf_path, printer, copies, sides)
 }
 
 fn validate_printer_capabilities(item: &PrintQueueItemPayload) -> Result<(), String> {
@@ -304,4 +355,26 @@ fn schedule_temporary_cleanup(paths: Vec<PathBuf>) {
         thread::sleep(TEMP_PRINT_FILE_RETENTION);
         cleanup_temporary_paths(&paths);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sides_and_flip_map_to_duplex_intent() {
+        assert_eq!(
+            resolve_print_sides("duplex", "longEdge"),
+            PrintSides::DuplexLongEdge
+        );
+        assert_eq!(
+            resolve_print_sides("duplex", "shortEdge"),
+            PrintSides::DuplexShortEdge
+        );
+        assert_eq!(
+            resolve_print_sides("simplex", "longEdge"),
+            PrintSides::Simplex
+        );
+        assert_eq!(resolve_print_sides("", ""), PrintSides::Simplex);
+    }
 }

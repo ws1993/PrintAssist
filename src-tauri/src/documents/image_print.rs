@@ -17,9 +17,10 @@ use windows::Win32::Foundation::{GENERIC_READ, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps,
     ResetDCW, SelectObject, SetBrushOrgEx, SetStretchBltMode, StretchBlt, StretchDIBits,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
-    DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HALFTONE, HBITMAP, HDC,
-    HORZRES, LOGPIXELSX, SRCCOPY, VERTRES,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DEVMODE_DUPLEX, DIB_RGB_COLORS,
+    DMDUP_HORIZONTAL, DMDUP_SIMPLEX, DMDUP_VERTICAL, DMORIENT_LANDSCAPE, DMORIENT_PORTRAIT,
+    DM_DUPLEX, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HALFTONE, HBITMAP, HDC, HORZRES,
+    LOGPIXELSX, SRCCOPY, VERTRES,
 };
 use windows::Win32::Graphics::Imaging::{
     CLSID_WICImagingFactory, GUID_WICPixelFormat32bppBGRA, IWICBitmapFrameDecode, IWICBitmapSource,
@@ -34,11 +35,14 @@ use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED,
 };
 
+use super::PrintSides;
+
 /// Prints an image while preserving its orientation and maximizing page coverage.
 pub fn print_image_to_printer(
     file_path: &Path,
     printer_name: &str,
     copies: u32,
+    sides: PrintSides,
 ) -> Result<(), String> {
     if !file_path.exists() {
         return Err(format!("文件不存在：{}", file_path.display()));
@@ -48,7 +52,7 @@ pub fn print_image_to_printer(
     }
 
     let decoded = decode_image_bgra(file_path)?;
-    print_decoded_pages(std::slice::from_ref(&decoded), printer_name, copies)
+    print_decoded_pages(std::slice::from_ref(&decoded), printer_name, copies, sides)
 }
 
 /// Query the printer's logical DPI used for device coordinates.
@@ -90,6 +94,7 @@ pub fn print_decoded_pages(
     pages: &[DecodedImage],
     printer_name: &str,
     copies: u32,
+    sides: PrintSides,
 ) -> Result<(), String> {
     if pages.is_empty() {
         return Err("没有可打印的页面".to_string());
@@ -100,7 +105,7 @@ pub fn print_decoded_pages(
 
     let copy_count = copies.max(1);
     for _ in 0..copy_count {
-        print_decoded_pages_once(pages, printer_name)?;
+        print_decoded_pages_once(pages, printer_name, sides)?;
     }
     Ok(())
 }
@@ -258,7 +263,11 @@ fn read_exif_orientation(frame: &IWICBitmapFrameDecode) -> Option<u16> {
     }
 }
 
-fn print_decoded_pages_once(pages: &[DecodedImage], printer_name: &str) -> Result<(), String> {
+fn print_decoded_pages_once(
+    pages: &[DecodedImage],
+    printer_name: &str,
+    sides: PrintSides,
+) -> Result<(), String> {
     let printer_wide = os_str_to_wide(OsStr::new(printer_name));
     let mut printer_handle = HANDLE::default();
     unsafe {
@@ -274,6 +283,7 @@ fn print_decoded_pages_once(pages: &[DecodedImage], printer_name: &str) -> Resul
         &base_devmode,
         pages[0].width,
         pages[0].height,
+        sides,
     )?;
 
     let hdc = unsafe {
@@ -313,6 +323,7 @@ fn print_decoded_pages_once(pages: &[DecodedImage], printer_name: &str) -> Resul
                 &base_devmode,
                 page.width,
                 page.height,
+                sides,
             )?;
             let reset = unsafe { ResetDCW(hdc, page_devmode.as_ptr() as *const DEVMODEW) };
             if reset.is_invalid() {
@@ -347,6 +358,90 @@ fn print_decoded_pages_once(pages: &[DecodedImage], printer_name: &str) -> Resul
             Err(error)
         }
     }
+}
+
+/// Driver-level duplex report for diagnostics (see `printer_probe` binary).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplexProbeReport {
+    pub printer: String,
+    pub requested_sides: String,
+    pub base_duplex: i16,
+    pub requested_duplex: i16,
+    pub validated_duplex: i16,
+    pub driver_honored_request: bool,
+}
+
+/// Diagnostic: build the same DEVMODE a real job would submit, let the driver
+/// validate it, and report the `dmDuplex` value the driver actually kept.
+///
+/// `dmDuplex`: 1 = simplex, 2 = duplex long edge, 3 = duplex short edge.
+/// A validated value that differs from the request means the driver silently
+/// downgrades duplex — no code fix on our side can make that printer duplex.
+pub fn probe_duplex_devmode(
+    printer_name: &str,
+    sides: PrintSides,
+) -> Result<DuplexProbeReport, String> {
+    if printer_name.trim().is_empty() {
+        return Err("打印机名称不能为空".to_string());
+    }
+    let printer_wide = os_str_to_wide(OsStr::new(printer_name));
+    let mut printer_handle = HANDLE::default();
+    unsafe {
+        OpenPrinterW(PCWSTR(printer_wide.as_ptr()), &mut printer_handle, None)
+            .map_err(|error| format!("打开打印机失败：{error}"))?;
+    }
+    let _printer_guard = PrinterGuard(printer_handle);
+
+    let base_devmode = query_devmode(printer_handle, &printer_wide)?;
+    let base_duplex = read_devmode_duplex(&base_devmode)?;
+
+    let mut requested_devmode = base_devmode.clone();
+    set_duplex_from_sides(&mut requested_devmode, sides);
+    let requested_duplex = read_devmode_duplex(&requested_devmode)?;
+
+    // Mirror the real job path: merge through DocumentPropertiesW and keep
+    // whatever the driver returns.
+    let mut validated = vec![0_u8; requested_devmode.len()];
+    let result = unsafe {
+        DocumentPropertiesW(
+            HWND::default(),
+            printer_handle,
+            PCWSTR(printer_wide.as_ptr()),
+            Some(validated.as_mut_ptr() as *mut DEVMODEW),
+            Some(requested_devmode.as_ptr() as *const DEVMODEW),
+            DM_IN_BUFFER.0 | DM_OUT_BUFFER.0,
+        )
+    };
+    if result < 0 {
+        return Err(format!("驱动校验 DEVMODE 失败：返回码 {result}"));
+    }
+    let validated_duplex = read_devmode_duplex(&validated)?;
+
+    Ok(DuplexProbeReport {
+        printer: printer_name.to_string(),
+        requested_sides: describe_print_sides(sides).to_string(),
+        base_duplex,
+        requested_duplex,
+        validated_duplex,
+        driver_honored_request: validated_duplex == requested_duplex,
+    })
+}
+
+pub fn describe_print_sides(sides: PrintSides) -> &'static str {
+    match sides {
+        PrintSides::Simplex => "simplex",
+        PrintSides::DuplexLongEdge => "duplex-long-edge",
+        PrintSides::DuplexShortEdge => "duplex-short-edge",
+    }
+}
+
+fn read_devmode_duplex(devmode_bytes: &[u8]) -> Result<i16, String> {
+    if devmode_bytes.len() < size_of::<DEVMODEW>() {
+        return Err("DEVMODE 缓冲区过短".to_string());
+    }
+    let devmode = unsafe { &*(devmode_bytes.as_ptr() as *const DEVMODEW) };
+    Ok(devmode.dmDuplex.0)
 }
 
 fn query_devmode(printer_handle: HANDLE, printer_wide: &[u16]) -> Result<Vec<u8>, String> {
@@ -389,9 +484,11 @@ fn prepare_page_devmode(
     base_devmode: &[u8],
     content_width: u32,
     content_height: u32,
+    sides: PrintSides,
 ) -> Result<Vec<u8>, String> {
     let mut modified = base_devmode.to_vec();
     set_page_orientation_from_content(&mut modified, content_width, content_height);
+    set_duplex_from_sides(&mut modified, sides);
 
     let mut validated = vec![0_u8; modified.len()];
     let result = unsafe {
@@ -441,6 +538,27 @@ fn set_page_orientation_from_content(
 
     devmode.dmFields |= DM_ORIENTATION;
     devmode.Anonymous1.Anonymous1.dmOrientation = requested_orientation as i16;
+}
+
+/// Apply the resolved duplex intent to the DEVMODE.
+///
+/// `DMDUP_VERTICAL` flips on the long edge, `DMDUP_HORIZONTAL` on the short
+/// edge — matching the UI's 双面长边/双面短边 wording. Setting `DMDUP_SIMPLEX`
+/// explicitly also protects against a driver default that is duplex.
+fn set_duplex_from_sides(devmode_bytes: &mut [u8], sides: PrintSides) {
+    if devmode_bytes.len() < size_of::<DEVMODEW>() {
+        return;
+    }
+
+    let requested_duplex: DEVMODE_DUPLEX = match sides {
+        PrintSides::Simplex => DMDUP_SIMPLEX,
+        PrintSides::DuplexLongEdge => DMDUP_VERTICAL,
+        PrintSides::DuplexShortEdge => DMDUP_HORIZONTAL,
+    };
+
+    let devmode = unsafe { &mut *(devmode_bytes.as_mut_ptr() as *mut DEVMODEW) };
+    devmode.dmFields |= DM_DUPLEX;
+    devmode.dmDuplex = requested_duplex;
 }
 
 fn draw_image_on_page(hdc: HDC, image: &DecodedImage) -> Result<(), String> {
@@ -665,6 +783,7 @@ mod tests {
             Path::new("C:\\\\this-file-should-not-exist-printassist.png"),
             "Microsoft Print to PDF",
             1,
+            PrintSides::Simplex,
         );
         assert!(result.is_err());
     }
@@ -735,5 +854,32 @@ mod tests {
         assert_eq!(paper_width, 2100);
         assert_eq!(paper_length, 2970);
         assert_eq!(devmode.dmFields & DM_PAPERSIZE, DM_PAPERSIZE);
+    }
+
+    #[test]
+    fn duplex_sides_map_to_devmode_duplex_field() {
+        let mut devmode: DEVMODEW = unsafe { zeroed() };
+        let devmode_bytes = unsafe {
+            std::slice::from_raw_parts_mut(
+                (&mut devmode as *mut DEVMODEW).cast::<u8>(),
+                size_of::<DEVMODEW>(),
+            )
+        };
+
+        set_duplex_from_sides(devmode_bytes, PrintSides::DuplexLongEdge);
+        unsafe {
+            assert_eq!(devmode.dmFields & DM_DUPLEX, DM_DUPLEX);
+            assert_eq!(devmode.dmDuplex, DMDUP_VERTICAL);
+        }
+
+        set_duplex_from_sides(devmode_bytes, PrintSides::DuplexShortEdge);
+        unsafe {
+            assert_eq!(devmode.dmDuplex, DMDUP_HORIZONTAL);
+        }
+
+        set_duplex_from_sides(devmode_bytes, PrintSides::Simplex);
+        unsafe {
+            assert_eq!(devmode.dmDuplex, DMDUP_SIMPLEX);
+        }
     }
 }

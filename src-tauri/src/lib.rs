@@ -60,7 +60,6 @@ pub fn run() {
             commands::validate_supported_path,
             commands::probe_document_info
         ])
-
         .run(tauri::generate_context!())
         .expect("error while running PrintAssist");
 }

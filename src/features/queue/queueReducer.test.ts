@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyQueueState } from '../../domain/queueTypes';
-import { calculateBatchMetrics, createDefaultGlobalSettings } from '../../domain/printSettings';
+import {
+  calculateBatchMetrics,
+  createDefaultGlobalSettings,
+  effectiveSidesMode,
+  resolveDuplexAvailability,
+  supportsDuplexForKind,
+} from '../../domain/printSettings';
 import { createPrintSummary, detectDocumentKind, queueReducer } from './queueReducer';
 
 describe('detectDocumentKind', () => {
@@ -148,6 +154,72 @@ describe('calculateBatchMetrics', () => {
     expect(metrics.totalSheets).toBe(6);
     expect(metrics.savedSheets).toBe(5);
     expect(metrics.savingPercentage).toBe(45);
+  });
+});
+
+describe('duplex capability by file kind', () => {
+  it('treats text files as unable to enforce duplex', () => {
+    expect(supportsDuplexForKind('text')).toBe(false);
+    expect(supportsDuplexForKind('unknown')).toBe(false);
+    expect(supportsDuplexForKind('pdf')).toBe(true);
+    expect(supportsDuplexForKind('word')).toBe(true);
+  });
+
+  it('reports why duplex is unavailable', () => {
+    expect(
+      resolveDuplexAvailability({ printerDuplexEnabled: false, kind: 'pdf' }).enabled,
+    ).toBe(false);
+    const text = resolveDuplexAvailability({ printerDuplexEnabled: true, kind: 'text' });
+    expect(text.enabled).toBe(false);
+    expect(text.reason).toContain('文本文件');
+  });
+
+  it('forces simplex for text so the UI never claims duplex', () => {
+    const globalSettings = createDefaultGlobalSettings('HP');
+    globalSettings.sidesMode = 'duplex';
+
+    // Item 1: 8 pages but text -> duplex cannot be enforced -> 8 sheets
+    // Item 2: 8 pages pdf -> duplex honored -> 4 sheets
+    const metrics = calculateBatchMetrics(
+      [
+        { pageCount: 8, override: {}, kind: 'text' },
+        { pageCount: 8, override: {}, kind: 'pdf' },
+      ],
+      globalSettings,
+      true,
+    );
+
+    expect(metrics.totalPages).toBe(16);
+    expect(metrics.totalSheets).toBe(12);
+    expect(metrics.savedSheets).toBe(4);
+  });
+
+  it('does not halve sheets when the printer cannot duplex', () => {
+    const globalSettings = createDefaultGlobalSettings('HP');
+    globalSettings.sidesMode = 'duplex';
+
+    const metrics = calculateBatchMetrics(
+      [{ pageCount: 10, override: {}, kind: 'pdf' }],
+      globalSettings,
+      false,
+    );
+
+    expect(metrics.totalSheets).toBe(10);
+    expect(metrics.savedSheets).toBe(0);
+  });
+
+  it('effectiveSidesMode degrades to simplex when duplex is unavailable', () => {
+    const unavailable = resolveDuplexAvailability({
+      printerDuplexEnabled: true,
+      kind: 'text',
+    });
+    expect(effectiveSidesMode('duplex', unavailable)).toBe('simplex');
+
+    const available = resolveDuplexAvailability({
+      printerDuplexEnabled: true,
+      kind: 'pdf',
+    });
+    expect(effectiveSidesMode('duplex', available)).toBe('duplex');
   });
 });
 

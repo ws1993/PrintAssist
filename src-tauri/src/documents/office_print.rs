@@ -7,9 +7,7 @@ use std::path::Path;
 
 use windows::core::VARIANT;
 
-use super::office_com::{
-    absolute_path_text, set_active_printer, ComApartment, DispatchObject,
-};
+use super::office_com::{absolute_path_text, set_active_printer, ComApartment, DispatchObject};
 use super::DocumentKind;
 
 /// Prints an Office document via desktop Office COM automation.
@@ -100,18 +98,18 @@ fn print_word(
             document.call_unit(
                 "PrintOut",
                 vec![
-                    VARIANT::from(false),          // Background
-                    VARIANT::from(false),          // Append
-                    VARIANT::from(range_code),     // Range
-                    VARIANT::from(""),             // OutputFileName
-                    VARIANT::from(""),             // From
-                    VARIANT::from(""),             // To
-                    VARIANT::from(0_i32),          // Item
-                    VARIANT::from(copies as i32),  // Copies
+                    VARIANT::from(false),               // Background
+                    VARIANT::from(false),               // Append
+                    VARIANT::from(range_code),          // Range
+                    VARIANT::from(""),                  // OutputFileName
+                    VARIANT::from(""),                  // From
+                    VARIANT::from(""),                  // To
+                    VARIANT::from(0_i32),               // Item
+                    VARIANT::from(copies as i32),       // Copies
                     VARIANT::from(pages_text.as_str()), // Pages
-                    VARIANT::from(0_i32),          // PageType
-                    VARIANT::from(false),          // PrintToFile
-                    VARIANT::from(true),           // Collate
+                    VARIANT::from(0_i32),               // PageType
+                    VARIANT::from(false),               // PrintToFile
+                    VARIANT::from(true),                // Collate
                 ],
             )
         })();
@@ -149,11 +147,7 @@ fn print_excel(absolute_input: &str, printer_name: &str, copies: u32) -> Result<
             // PrintOut(From, To, Copies, ...) — empty optional From/To.
             workbook.call_unit(
                 "PrintOut",
-                vec![
-                    VARIANT::new(),
-                    VARIANT::new(),
-                    VARIANT::from(copies as i32),
-                ],
+                vec![VARIANT::new(), VARIANT::new(), VARIANT::from(copies as i32)],
             )
         })();
 

@@ -127,7 +127,7 @@ fn prepare_document_for_full_rewrite(document: &mut Document) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lopdf::{dictionary, Object, Stream, xref::XrefType};
+    use lopdf::{dictionary, xref::XrefType, Object, Stream};
     use std::fs;
 
     fn write_minimal_pdf(path: &Path, page_count: u32) {

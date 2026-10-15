@@ -3,9 +3,9 @@ pub mod page_range;
 pub mod pdf_pages;
 
 #[cfg(windows)]
-pub mod office_com;
-#[cfg(windows)]
 pub mod image_print;
+#[cfg(windows)]
+pub mod office_com;
 #[cfg(windows)]
 pub mod office_print;
 #[cfg(windows)]
@@ -26,6 +26,18 @@ pub enum DocumentKind {
     Excel,
     PowerPoint,
     Unknown,
+}
+
+/// Duplex intent resolved from print settings.
+///
+/// Mapped onto the printer DEVMODE `dmDuplex` field by the Windows print
+/// path: `DMDUP_SIMPLEX`, `DMDUP_VERTICAL` (long-edge flip) and
+/// `DMDUP_HORIZONTAL` (short-edge flip).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrintSides {
+    Simplex,
+    DuplexLongEdge,
+    DuplexShortEdge,
 }
 
 pub fn detect_document_kind(path: &Path) -> DocumentKind {
